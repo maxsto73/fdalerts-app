@@ -1,0 +1,81 @@
+
+<!doctype html>
+<html lang="el">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>RasPi Notifications — Ultimate</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+    <!-- PWA / iOS -->
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#2f6fec">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
+    <script>
+      async function setupPush() {
+        if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+        try {
+          const reg = await navigator.serviceWorker.register('/sw.js');
+          const perm = await Notification.requestPermission();
+          if (perm !== 'granted') return;
+          const resp = await fetch('/vapidPublicKey');
+          const data = await resp.json();
+          const vapidKey = data.key;
+          const appKey = urlBase64ToUint8Array(vapidKey);
+          const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: appKey });
+          await fetch('/subscribe', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(sub)});
+          document.getElementById('wp-status').textContent = 'Ο browser είναι εγγεγραμμένος για Web Push.';
+        } catch (e) { console.log('Web Push setup failed', e); }
+      }
+      function urlBase64ToUint8Array(base64String) {
+        const padding = '='.repeat((4 - base64String.length % 4) % 4);
+        const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+        const rawData = atob(base64);
+        const outputArray = new Uint8Array(rawData.length);
+        for (let i = 0; i < rawData.length; ++i) outputArray[i] = rawData.charCodeAt(i);
+        return outputArray;
+      }
+      function onChannelChange() {
+        const ch = document.querySelector('input[name="channel"]:checked')?.value;
+        document.getElementById('sms-extra').style.display = ch === 'sms' ? 'block' : 'none';
+      }
+      window.addEventListener('load', () => { setupPush(); onChannelChange(); });
+    </script>
+  </head>
+  <body>
+    <div class="container">
+      <h1>Ενιαίες Ειδοποιήσεις Raspberry Pi</h1>
+      <p>Θύρα: {{ port }} • {{ version }}</p>
+      <p id="wp-status"></p>
+
+      <form method="POST">
+        <fieldset>
+          <legend>Διάλεξε κανάλι ειδοποίησης</legend>
+          <label><input type="radio" name="channel" value="pushover" onchange="onChannelChange()"> Pushover</label>
+          <label><input type="radio" name="channel" value="telegram" onchange="onChannelChange()"> Telegram</label>
+          <label><input type="radio" name="channel" value="webpush" onchange="onChannelChange()"> Web Push</label>
+          <label><input type="radio" name="channel" value="sms" onchange="onChannelChange()"> SMS</label>
+          <p class="hint">* Θα λειτουργήσουν μόνο όσα έχουν ρυθμιστεί στο <code>.env</code>. Για Web Push χρειάζεται αποδοχή ειδοποιήσεων στον browser.</p>
+        </fieldset>
+
+        <div id="sms-extra" style="display:none">
+          <label for="to_phone">Παραλήπτης (τηλέφωνο για SMS)</label>
+          <input type="text" id="to_phone" name="to_phone" placeholder="+30XXXXXXXXXX" />
+          <p class="hint">Πάροχος: {{ sms_provider or '—' }}</p>
+        </div>
+
+        <label for="message">Κείμενο ειδοποίησης</label>
+        <textarea id="message" name="message" rows="5" placeholder="Γράψε το μήνυμα που θες να σταλεί..."></textarea>
+
+        <button type="submit">Αποστολή</button>
+      </form>
+
+      {% if status is not none %}
+      <div class="status {{ 'ok' if ok else 'error' }}">{{ status }}</div>
+      {% endif %}
+
+      <footer><small>Flask • Pushover • Telegram • Web Push • SMS</small></footer>
+    </div>
+  </body>
+</html>

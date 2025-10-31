@@ -1,0 +1,62 @@
+#!/bin/bash
+set -e
+
+APP_DIR="/opt/raspipush_ultimate"
+SERVICE_NAME="fdalerts.service"
+REPO_ZIP="https://github.com/maxsto73/fdalerts-app/archive/refs/heads/main.zip"
+
+echo "======================================="
+echo " 🚀 FD Alerts Auto Installer"
+echo "======================================="
+
+echo "🧹 Καθαρισμός παλαιότερης εγκατάστασης..."
+sudo systemctl stop $SERVICE_NAME 2>/dev/null || true
+sudo rm -rf $APP_DIR
+sudo mkdir -p $APP_DIR
+
+echo "⬇️  Λήψη εφαρμογής από GitHub..."
+cd /tmp
+sudo rm -f fdalerts.zip
+wget -q -O fdalerts.zip $REPO_ZIP
+
+echo "📦 Αποσυμπίεση..."
+sudo unzip -q fdalerts.zip -d /tmp
+sudo mv /tmp/fdalerts-app-main/* $APP_DIR/
+
+echo "🐍 Δημιουργία Python virtual environment..."
+sudo apt update -y
+sudo apt install -y python3 python3-venv python3-pip unzip
+cd $APP_DIR
+sudo python3 -m venv venv
+sudo $APP_DIR/venv/bin/pip install --no-cache-dir flask requests
+
+echo "⚙️  Δημιουργία systemd service..."
+sudo bash -c "cat > /etc/systemd/system/$SERVICE_NAME" <<EOF
+[Unit]
+Description=FD Alerts Flask Service
+After=network.target
+
+[Service]
+WorkingDirectory=$APP_DIR
+ExecStart=$APP_DIR/venv/bin/python $APP_DIR/app.py
+Restart=always
+User=pi
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+echo "🔁 Ενεργοποίηση υπηρεσίας..."
+sudo systemctl daemon-reload
+sudo systemctl enable $SERVICE_NAME
+sudo systemctl restart $SERVICE_NAME
+
+sleep 3
+echo ""
+if sudo systemctl is-active --quiet $SERVICE_NAME; then
+    echo "✅ Εγκατάσταση ολοκληρώθηκε επιτυχώς!"
+    echo "🌐 Άνοιξε: http://$(hostname -I | awk '{print $1}'):8899"
+else
+    echo "⚠️ Το service δεν ξεκίνησε σωστά. Δες τα logs:"
+    sudo journalctl -u $SERVICE_NAME -n 10 --no-pager
+fi

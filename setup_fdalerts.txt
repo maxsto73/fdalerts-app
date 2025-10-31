@@ -20,15 +20,16 @@ sudo rm -f fdalerts.zip
 wget -q -O fdalerts.zip $REPO_ZIP
 
 echo "📦 Αποσυμπίεση..."
+sudo apt install -y unzip >/dev/null
 sudo unzip -q fdalerts.zip -d /tmp
 sudo mv /tmp/fdalerts-app-main/* $APP_DIR/
 
 echo "🐍 Δημιουργία Python virtual environment..."
-sudo apt update -y
-sudo apt install -y python3 python3-venv python3-pip unzip
+sudo apt update -y >/dev/null
+sudo apt install -y python3 python3-venv python3-pip >/dev/null
 cd $APP_DIR
 sudo python3 -m venv venv
-sudo $APP_DIR/venv/bin/pip install --no-cache-dir flask requests
+sudo $APP_DIR/venv/bin/pip install --no-cache-dir flask requests >/dev/null
 
 echo "⚙️  Δημιουργία systemd service..."
 sudo bash -c "cat > /etc/systemd/system/$SERVICE_NAME" <<EOF
@@ -37,16 +38,20 @@ Description=FD Alerts Flask Service
 After=network.target
 
 [Service]
+Environment="PYTHONHOME="
 WorkingDirectory=$APP_DIR
-ExecStart=$APP_DIR/venv/bin/python $APP_DIR/app.py
+ExecStart=/usr/bin/env $APP_DIR/venv/bin/python $APP_DIR/app.py
 Restart=always
 User=pi
+StandardOutput=append:/var/log/fdalerts.log
+StandardError=append:/var/log/fdalerts.log
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
 echo "🔁 Ενεργοποίηση υπηρεσίας..."
+sudo systemctl daemon-reexec
 sudo systemctl daemon-reload
 sudo systemctl enable $SERVICE_NAME
 sudo systemctl restart $SERVICE_NAME
@@ -57,6 +62,6 @@ if sudo systemctl is-active --quiet $SERVICE_NAME; then
     echo "✅ Εγκατάσταση ολοκληρώθηκε επιτυχώς!"
     echo "🌐 Άνοιξε: http://$(hostname -I | awk '{print $1}'):8899"
 else
-    echo "⚠️ Το service δεν ξεκίνησε σωστά. Δες τα logs:"
-    sudo journalctl -u $SERVICE_NAME -n 10 --no-pager
+    echo "⚠️ Το service δεν ξεκίνησε σωστά. Δες τα τελευταία logs:"
+    sudo journalctl -u $SERVICE_NAME -n 15 --no-pager
 fi

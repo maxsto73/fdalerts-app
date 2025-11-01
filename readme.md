@@ -124,3 +124,83 @@ Web API Integration: Yuboto SMS API
 Το εργαλείο αυτό καθιστά τη διαχείριση του FD Alerts εντελώς αυτοματοποιημένη:
 
 Από εγκατάσταση μέχρι backup, όλα γίνονται με ένα μόνο script!
+------------------------------------------------------------------------------------------------------------------------------------------
+------------------------------------------------------------------------------------------------------------------------------------------
+---
+
+## 💻 Οδηγίες για Developers (Mac & Raspberry)
+
+Η ενότητα αυτή περιγράφει πώς μπορείς να τρέξεις, ενημερώσεις ή ανεβάσεις
+την εφαρμογή **FD Alerts** τόσο από Raspberry όσο και από MacOS.
+
+---
+
+### 🧩 Εκτέλεση στο Raspberry Pi
+
+Για πλήρη εγκατάσταση ή ενημέρωση, εκτέλεσε την παρακάτω εντολή:
+
+```bash
+curl -sSL https://raw.githubusercontent.com/maxsto73/fdalerts-app/main/setup_fdalerts.txt | sudo bash
+💡 Αν θέλεις να το αποθηκεύσεις πρώτα και να το τρέξεις χειροκίνητα:
+
+bash
+Αντιγραφή κώδικα
+curl -sSL https://raw.githubusercontent.com/maxsto73/fdalerts-app/main/setup_fdalerts.txt -o setup_fdalerts.txt
+chmod +x setup_fdalerts.txt
+sudo bash setup_fdalerts.txt
+Μετά την εγκατάσταση, η εφαρμογή θα είναι διαθέσιμη στο browser:
+
+👉 http://[IP του Raspberry]:8899
+
+🧠 Κατέβασμα ολόκληρου του Repo (π.χ. σε νέο Pi)
+Αν θέλεις να εγκαταστήσεις από καθαρό περιβάλλον:
+
+bash
+Αντιγραφή κώδικα
+cd /opt
+sudo apt install -y unzip
+wget https://github.com/maxsto73/fdalerts-app/archive/refs/heads/main.zip -O fdalerts.zip
+sudo unzip fdalerts.zip -d /opt
+sudo mv /opt/fdalerts-app-main /opt/raspipush_ultimate
+🧰 Ενημέρωση ή Ανέβασμα Αρχείων στο GitHub (MacOS)
+Αν έχεις αλλάξει αρχεία (π.χ. app.py, setup_fdalerts.txt, templates/, κ.λπ.)
+και θέλεις να ενημερώσεις το repo σου:
+
+bash
+Αντιγραφή κώδικα
+cd ~/Desktop/raspipush_ultimate
+git init
+git branch -M main
+git remote remove origin 2>/dev/null
+git remote add origin https://github.com/maxsto73/fdalerts-app.git
+git pull origin main --allow-unrelated-histories
+git add .
+git commit -m "Ενημέρωση αρχείων FD Alerts"
+git push -u origin main
+💡 Σημείωση: Αν σου ζητήσει password, βάλε το προσωπικό σου GitHub Personal Access Token (PAT),
+όχι τον κωδικό σου.
+
+🔁 Ενημέρωση μόνο (χωρίς νέα σύνδεση)
+Αν έχεις ήδη συνδεδεμένο το repo (git remote -v δείχνει το origin):
+
+bash
+Αντιγραφή κώδικα
+cd ~/Desktop/raspipush_ultimate
+git add .
+git commit -m "Update app & installer"
+git push
+📜 Σύνοψη Εντολών
+Ενέργεια	Εντολή
+Εγκατάσταση στο Pi	curl -sSL https://raw.githubusercontent.com/maxsto73/fdalerts-app/main/setup_fdalerts.txt | sudo bash
+Τοπική εκτέλεση setup	curl -sSL … -o setup_fdalerts.txt && chmod +x setup_fdalerts.txt && sudo bash setup_fdalerts.txt
+Upload από Mac στο GitHub	git add . && git commit -m "update" && git push
+Κατέβασμα repo σε νέο Pi	wget https://github.com/maxsto73/fdalerts-app/archive/refs/heads/main.zip
+
+🔧 Tip: Μπορείς να κρατήσεις ένα backup του setup script και στο Synology σου,
+ώστε αν ποτέ “πέσει” το GitHub, να μπορείς να τρέξεις:
+
+bash
+Αντιγραφή κώδικα
+curl -sSL https://www.fdteam2012.gr/raspush/setup_fdalerts.txt | sudo bash
+📦 Τελευταία ενημέρωση: Νοέμβριος 2025
+👨‍💻 Συντήρηση: FDTeam 2012 / @maxsto73

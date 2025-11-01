@@ -3,28 +3,22 @@ set -e
 
 SERVICE_NAME="fdalerts.service"
 APP_DIR="/opt/raspipush_ultimate"
-REPO_URL="https://github.com/maxsto73/fdalerts-app/archive/refs/heads/main.zip"
+REPO_ZIP_URL="https://github.com/maxsto73/fdalerts-app/archive/refs/heads/main.zip"
 TMP_DIR="/tmp/fdalerts-app-main"
 
 clear
 echo "======================================="
 echo " 🚀 FD Alerts Setup Utility"
-echo "    (Installer / Uninstaller / Update)"
 echo "======================================="
-
 echo ""
 echo "1) Εγκατάσταση"
 echo "2) Απεγκατάσταση"
-echo "3) Επανεγκατάσταση / Ενημέρωση"
+echo "3) Επανεγκατάσταση"
 echo "4) Προβολή logs"
 echo ""
 read -p "👉 Επιλογή (1-4): " CHOICE
 
 case "$CHOICE" in
-
-# ----------------------------------------------------------
-# 1) ΕΓΚΑΤΑΣΤΑΣΗ
-# ----------------------------------------------------------
 1)
     echo ""
     echo "🔧 Ξεκινά η εγκατάσταση FD Alerts..."
@@ -34,30 +28,26 @@ case "$CHOICE" in
     echo "📦 Κατέβασμα αρχείων..."
     sudo rm -rf $TMP_DIR
     cd /tmp
-    curl -L -o fdalerts.zip "$REPO_URL" >/dev/null 2>&1
+    curl -L -o fdalerts.zip "$REPO_ZIP_URL" >/dev/null 2>&1
     unzip -qo fdalerts.zip
 
-    echo "📁 Αντιγραφή στο $APP_DIR ..."
+    echo "📁 Αντιγραφή εφαρμογής..."
     sudo rm -rf $APP_DIR
     sudo mkdir -p $APP_DIR
     sudo cp -r $TMP_DIR/* $APP_DIR
     sudo chown -R pi:pi $APP_DIR
-    cd $APP_DIR
 
-    echo "🐍 Δημιουργία Python virtual environment..."
+    echo "🐍 Δημιουργία Python venv..."
     sudo apt update -y >/dev/null
     sudo apt install -y python3-full python3-venv python3-pip unzip >/dev/null
-    sudo rm -rf $APP_DIR/venv
     sudo python3 -m venv $APP_DIR/venv
     sudo chown -R pi:pi $APP_DIR/venv
-
-    echo "📦 Εγκατάσταση Flask & Requests..."
-    source venv/bin/activate
+    source $APP_DIR/venv/bin/activate
     pip install --upgrade pip --break-system-packages >/dev/null
-    pip install flask requests --break-system-packages >/dev/null
+    pip install flask requests python-dotenv --break-system-packages >/dev/null
     deactivate
 
-    echo "⚙️  Δημιουργία systemd service..."
+    echo "⚙️ Δημιουργία systemd service..."
     sudo bash -c "cat > /etc/systemd/system/$SERVICE_NAME" <<EOF
 [Unit]
 Description=FD Alerts Flask Service
@@ -83,17 +73,13 @@ EOF
 
     if systemctl is-active --quiet $SERVICE_NAME; then
         echo ""
-        echo "✅ Εγκατάσταση ολοκληρώθηκε επιτυχώς!"
+        echo "✅ FD Alerts εγκαταστάθηκε επιτυχώς!"
         echo "🌐 Άνοιξε: http://$(hostname -I | awk '{print $1}'):$PORT"
     else
-        echo "⚠️ Το service δεν ξεκίνησε σωστά. Δες τα τελευταία logs:"
+        echo "⚠️ Το service δεν ξεκίνησε σωστά:"
         sudo journalctl -u $SERVICE_NAME -n 10 --no-pager
     fi
     ;;
-
-# ----------------------------------------------------------
-# 2) ΑΠΕΓΚΑΤΑΣΤΑΣΗ
-# ----------------------------------------------------------
 2)
     echo "🧹 Απεγκαθίσταται FD Alerts..."
     sudo systemctl stop $SERVICE_NAME 2>/dev/null || true
@@ -103,34 +89,23 @@ EOF
     sudo systemctl daemon-reload
     echo "✅ Ολοκληρώθηκε η απεγκατάσταση."
     ;;
-
-# ----------------------------------------------------------
-# 3) ΕΠΑΝΕΓΚΑΤΑΣΤΑΣΗ / UPDATE
-# ----------------------------------------------------------
 3)
-    echo "♻️  Επανεγκατάσταση / Ενημέρωση..."
+    echo "♻️ Επανεγκατάσταση..."
     sudo systemctl stop $SERVICE_NAME 2>/dev/null || true
-    sudo rm -rf $TMP_DIR
     cd /tmp
-    curl -L -o fdalerts.zip "$REPO_URL" >/dev/null 2>&1
+    curl -L -o fdalerts.zip "$REPO_ZIP_URL" >/dev/null 2>&1
     unzip -qo fdalerts.zip
     sudo cp -r $TMP_DIR/* $APP_DIR
     sudo chown -R pi:pi $APP_DIR
-    echo "🔁 Επανεκκίνηση υπηρεσίας..."
     sudo systemctl restart $SERVICE_NAME
     sleep 2
     systemctl status $SERVICE_NAME --no-pager -n 5
     ;;
-
-# ----------------------------------------------------------
-# 4) LOGS
-# ----------------------------------------------------------
 4)
-    echo "📜 Τελευταία logs FD Alerts:"
+    echo "📜 Τελευταία logs:"
     sudo journalctl -u $SERVICE_NAME -n 20 --no-pager
     ;;
-
 *)
-    echo "❌ Μη έγκυρη επιλογή. Έξοδος."
+    echo "❌ Μη έγκυρη επιλογή."
     ;;
 esac

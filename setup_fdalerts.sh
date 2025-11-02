@@ -2,60 +2,50 @@
 set -e
 
 echo "======================================="
-echo " 🚀 FD Alerts Automatic Installer (Stable)"
+echo " 🚀 FD Alerts — Full Auto Installer"
 echo "======================================="
 
 APP_DIR="/opt/raspipush_ultimate"
 SERVICE_NAME="fdalerts.service"
 REPO_URL="https://github.com/maxsto73/fdalerts-app/archive/refs/heads/main.zip"
+TMP_DIR="/tmp/fdalerts-app"
 
-# ------------------------------------------
-# Καθαρισμός παλιάς εγκατάστασης
-# ------------------------------------------
 echo "🧹 Καθαρισμός παλιάς εγκατάστασης..."
 sudo systemctl stop $SERVICE_NAME >/dev/null 2>&1 || true
-sudo systemctl disable $SERVICE_NAME >/dev/null 2>&1 || true
-sudo rm -rf $APP_DIR
-sudo mkdir -p $APP_DIR
-sudo chown -R pi:pi $APP_DIR
+sudo rm -rf "$APP_DIR" "$TMP_DIR" /etc/systemd/system/$SERVICE_NAME
 
-# ------------------------------------------
-# Κατέβασμα νέας έκδοσης
-# ------------------------------------------
-echo "⬇️  Κατεβάζω την τελευταία έκδοση από GitHub..."
+echo "⬇️  Κατέβασμα τελευταίας έκδοσης..."
+mkdir -p "$TMP_DIR"
 cd /tmp
-sudo rm -f app.zip
-sudo curl -L $REPO_URL -o app.zip
-sudo unzip -oq app.zip
-sudo mv fdalerts-app-main/* $APP_DIR/
-sudo rm -rf fdalerts-app-main app.zip
-sudo chown -R pi:pi $APP_DIR
+sudo curl -L -o app.zip "$REPO_URL"
+sudo unzip -qo app.zip -d "$TMP_DIR"
 
-# ------------------------------------------
-# Δημιουργία .env αν δεν υπάρχει
-# ------------------------------------------
-if [ ! -f "$APP_DIR/.env" ]; then
-  echo "🧩 Δημιουργία αρχείου .env..."
-  cat <<EOF | sudo tee $APP_DIR/.env >/dev/null
-SMS_API_KEY=your_api_key_here
-SMS_PROVIDER=provider_name_here
-EOF
-  sudo chown pi:pi $APP_DIR/.env
+echo "📦 Αντιγραφή αρχείων..."
+sudo mkdir -p "$APP_DIR"
+sudo cp -r $TMP_DIR/fdalerts-app-main/* "$APP_DIR/"
+sudo chmod -R 755 "$APP_DIR"
+
+if [ -f "$HOME/.env" ]; then
+  echo "⚙️  Αντιγραφή τοπικού .env..."
+  sudo cp "$HOME/.env" "$APP_DIR/.env"
+else
+  echo "⚠️  Δεν βρέθηκε .env — θα πρέπει να το δημιουργήσεις στο $APP_DIR/.env"
 fi
 
-# ------------------------------------------
-# Εγκατάσταση Python dependencies global
-# ------------------------------------------
-echo "🐍 Εγκατάσταση Python εξαρτήσεων..."
-sudo apt update -y >/dev/null 2>&1
-sudo apt install -y python3 python3-pip unzip >/dev/null 2>&1
-sudo pip3 install --break-system-packages flask requests python-dotenv >/dev/null
+echo "🐍 Ρύθμιση Python περιβάλλοντος..."
+sudo apt update -y >/dev/null
+sudo apt install -y python3 python3-pip python3-venv unzip >/dev/null
 
-# ------------------------------------------
-# Δημιουργία systemd service
-# ------------------------------------------
-echo "⚙️  Δημιουργία systemd service..."
-sudo bash -c "cat > /etc/systemd/system/$SERVICE_NAME" <<EOF
+cd "$APP_DIR"
+python3 -m venv venv
+source venv/bin/activate
+pip install --break-system-packages -r requirements.txt || true
+pip install --break-system-packages flask requests python-dotenv || true
+deactivate
+
+echo "🛠️ Δημιουργία systemd υπηρεσίας..."
+SERVICE_FILE="/etc/systemd/system/$SERVICE_NAME"
+sudo bash -c "cat > $SERVICE_FILE" <<EOF
 [Unit]
 Description=FD Alerts Flask Service on port 8899
 After=network.target
@@ -63,33 +53,24 @@ After=network.target
 [Service]
 User=pi
 WorkingDirectory=$APP_DIR
-Environment=FLASK_APP=app.py
-ExecStart=/usr/bin/python3 $APP_DIR/app.py
+EnvironmentFile=$APP_DIR/.env
+ExecStart=$APP_DIR/venv/bin/python3 $APP_DIR/app.py
 Restart=always
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
-# ------------------------------------------
-# Εκκίνηση υπηρεσίας
-# ------------------------------------------
-echo "🔁 Ενεργοποίηση υπηρεσίας..."
+echo "🔁 Επανεκκίνηση υπηρεσίας..."
 sudo systemctl daemon-reload
 sudo systemctl enable $SERVICE_NAME
 sudo systemctl restart $SERVICE_NAME
 
 sleep 3
+echo
+sudo systemctl status $SERVICE_NAME -n 15 --no-pager || true
 
-# ------------------------------------------
-# Έλεγχος λειτουργίας
-# ------------------------------------------
-if systemctl is-active --quiet $SERVICE_NAME; then
-  echo ""
-  echo "✅ Εγκατάσταση ολοκληρώθηκε επιτυχώς!"
-  echo "🌐 Άνοιξε: http://$(hostname -I | awk '{print $1}'):8899"
-else
-  echo ""
-  echo "⚠️ Το service δεν ξεκίνησε σωστά. Δες logs με:"
-  echo "   sudo journalctl -u $SERVICE_NAME -n 30 --no-pager"
-fi
+echo
+echo "✅ Ολοκληρώθηκε! Άνοιξε στο browser:"
+echo "   👉 http://$(hostname -I | awk '{print $1}'):8899"
+echo

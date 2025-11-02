@@ -1,61 +1,60 @@
 #!/bin/bash
 set -e
 
-SERVICE_NAME="fdalerts.service"
-INSTALL_DIR="/opt/raspipush_ultimate"
-REPO_URL="https://github.com/maxsto73/fdalerts-app/archive/refs/heads/main.zip"
-PYTHON_BIN=$(command -v python3 || true)
-
 echo "======================================="
 echo " 🚀 FD Alerts Automatic Installer"
 echo "======================================="
 
-# -------------------------------
-# 1. Καθαρή εγκατάσταση φακέλου
-# -------------------------------
+APP_DIR="/opt/raspipush_ultimate"
+SERVICE_NAME="fdalerts.service"
+REPO_URL="https://github.com/maxsto73/fdalerts-app/archive/refs/heads/main.zip"
+
+# ------------------------------------------
+# Καθαρισμός παλιάς εγκατάστασης
+# ------------------------------------------
 echo "🧹 Καθαρισμός παλιάς εγκατάστασης..."
 sudo systemctl stop $SERVICE_NAME >/dev/null 2>&1 || true
-sudo rm -rf $INSTALL_DIR
-sudo mkdir -p $INSTALL_DIR
-cd $INSTALL_DIR
+sudo systemctl disable $SERVICE_NAME >/dev/null 2>&1 || true
+sudo rm -rf $APP_DIR
+sudo mkdir -p $APP_DIR
+sudo chown -R pi:pi $APP_DIR
 
-# -------------------------------
-# 2. Λήψη αρχείων από GitHub
-# -------------------------------
+# ------------------------------------------
+# Κατέβασμα νέας έκδοσης
+# ------------------------------------------
 echo "⬇️  Κατεβάζω την τελευταία έκδοση από GitHub..."
-sudo apt update -y >/dev/null
-sudo apt install -y unzip curl python3 python3-venv python3-pip >/dev/null
-curl -L "$REPO_URL" -o app.zip
-unzip -o app.zip >/dev/null
-mv fdalerts-app-main/* $INSTALL_DIR
-rm -rf fdalerts-app-main app.zip
+cd /tmp
+sudo rm -f app.zip
+sudo curl -L $REPO_URL -o app.zip
+sudo unzip -oq app.zip
+sudo mv fdalerts-app-main/* $APP_DIR/
+sudo rm -rf fdalerts-app-main app.zip
+sudo chown -R pi:pi $APP_DIR
 
-# -------------------------------
-# 3. Δημιουργία .env
-# -------------------------------
-echo "🧩 Δημιουργία αρχείου .env..."
-cat <<EOF | sudo tee $INSTALL_DIR/.env >/dev/null
-API_KEY=MDBCNDZFQTktREI1MS00NUMxLUEzRTktOTY3RTQ0NURGNjA1
-SENDER=FDTeam 2012
-PROVIDER_URL=https://services.yuboto.com/omni/v1/Send
-PORT=8899
+# ------------------------------------------
+# Δημιουργία .env αν δεν υπάρχει
+# ------------------------------------------
+if [ ! -f "$APP_DIR/.env" ]; then
+  echo "🧩 Δημιουργία αρχείου .env..."
+  cat <<EOF | sudo tee $APP_DIR/.env >/dev/null
+SMS_API_KEY=your_api_key_here
+SMS_PROVIDER=provider_name_here
 EOF
+  sudo chown pi:pi $APP_DIR/.env
+fi
 
-sudo chown pi:pi $INSTALL_DIR/.env
-sudo chmod 600 $INSTALL_DIR/.env
-
-# -------------------------------
-# 4. Δημιουργία Python venv
-# -------------------------------
+# ------------------------------------------
+# Δημιουργία Python venv και εγκατάσταση dependencies
+# ------------------------------------------
 echo "🐍 Δημιουργία Python virtual environment..."
-$PYTHON_BIN -m venv venv
-source venv/bin/activate
-pip install --break-system-packages flask requests >/dev/null
-deactivate
+sudo apt update -y >/dev/null 2>&1
+sudo apt install -y python3 python3-venv python3-pip unzip >/dev/null 2>&1
+sudo -u pi python3 -m venv $APP_DIR/venv
+sudo -u pi $APP_DIR/venv/bin/pip install --break-system-packages flask requests python-dotenv >/dev/null
 
-# -------------------------------
-# 5. Δημιουργία systemd υπηρεσίας
-# -------------------------------
+# ------------------------------------------
+# Δημιουργία systemd service
+# ------------------------------------------
 echo "⚙️  Δημιουργία systemd service..."
 sudo bash -c "cat > /etc/systemd/system/$SERVICE_NAME" <<EOF
 [Unit]
@@ -63,34 +62,35 @@ Description=FD Alerts Flask Service on port 8899
 After=network.target
 
 [Service]
-Type=simple
-WorkingDirectory=$INSTALL_DIR
-ExecStart=$INSTALL_DIR/venv/bin/python $INSTALL_DIR/app.py
-EnvironmentFile=$INSTALL_DIR/.env
-Restart=always
 User=pi
+WorkingDirectory=$APP_DIR
+Environment=FLASK_APP=app.py
+ExecStart=$APP_DIR/venv/bin/python $APP_DIR/app.py
+Restart=always
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
-# -------------------------------
-# 6. Ενεργοποίηση και εκκίνηση
-# -------------------------------
-echo "🔁 Εκκίνηση υπηρεσίας..."
+# ------------------------------------------
+# Εκκίνηση υπηρεσίας
+# ------------------------------------------
+echo "🔁 Ενεργοποίηση υπηρεσίας..."
 sudo systemctl daemon-reload
-sudo systemctl enable $SERVICE_NAME >/dev/null
+sudo systemctl enable $SERVICE_NAME
 sudo systemctl restart $SERVICE_NAME
 
 sleep 3
-if systemctl is-active --quiet $SERVICE_NAME; then
-    echo ""
-    echo "✅ Εγκατάσταση ολοκληρώθηκε επιτυχώς!"
-    echo "🌐 Άνοιξε: http://$(hostname -I | awk '{print $1}'):8899"
-else
-    echo ""
-    echo "⚠️ Το service δεν ξεκίνησε σωστά. Δες logs με:"
-    echo "   sudo journalctl -u fdalerts.service -n 30 --no-pager"
-fi
 
-echo ""
+# ------------------------------------------
+# Έλεγχος λειτουργίας
+# ------------------------------------------
+if systemctl is-active --quiet $SERVICE_NAME; then
+  echo ""
+  echo "✅ Εγκατάσταση ολοκληρώθηκε επιτυχώς!"
+  echo "🌐 Άνοιξε: http://$(hostname -I | awk '{print $1}'):8899"
+else
+  echo ""
+  echo "⚠️ Το service δεν ξεκίνησε σωστά. Δες logs με:"
+  echo "   sudo journalctl -u $SERVICE_NAME -n 30 --no-pager"
+fi

@@ -2,7 +2,7 @@
 set -e
 
 echo "======================================="
-echo " 🚀 FD Alerts Automatic Installer"
+echo " 🚀 FD Alerts Automatic Installer (Stable)"
 echo "======================================="
 
 APP_DIR="/opt/raspipush_ultimate"
@@ -44,13 +44,12 @@ EOF
 fi
 
 # ------------------------------------------
-# Δημιουργία Python venv και εγκατάσταση dependencies
+# Εγκατάσταση Python dependencies global
 # ------------------------------------------
-echo "🐍 Δημιουργία Python virtual environment..."
+echo "🐍 Εγκατάσταση Python εξαρτήσεων..."
 sudo apt update -y >/dev/null 2>&1
-sudo apt install -y python3 python3-venv python3-pip unzip >/dev/null 2>&1
-sudo -u pi python3 -m venv $APP_DIR/venv
-sudo -u pi $APP_DIR/venv/bin/pip install --break-system-packages flask requests python-dotenv >/dev/null
+sudo apt install -y python3 python3-pip unzip >/dev/null 2>&1
+sudo pip3 install --break-system-packages flask requests python-dotenv >/dev/null
 
 # ------------------------------------------
 # Δημιουργία systemd service
@@ -65,7 +64,7 @@ After=network.target
 User=pi
 WorkingDirectory=$APP_DIR
 Environment=FLASK_APP=app.py
-ExecStart=$APP_DIR/venv/bin/python $APP_DIR/app.py
+ExecStart=/usr/bin/python3 $APP_DIR/app.py
 Restart=always
 
 [Install]

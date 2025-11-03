@@ -323,7 +323,17 @@ INDEX_HTML = r"""
 
       <label>Προεπισκόπηση</label>
       <div class="preview" id="preview"></div>
-
+      <div class="form-group mb-3">
+        <label for="customMessage" style="font-weight:600;color:#ddd;">✉️ Ελεύθερο μήνυμα SMS</label>
+        <textarea
+         id="customMessage"
+         name="customMessage"
+         class="form-control"
+         rows="3"
+         placeholder="Γράψε εδώ το μήνυμα που θέλεις να στείλεις..."
+         style="background-color:#1e1e1e;color:#fff;border:1px solid #444;font-size:14px;border-radius:6px;padding:10px;"></textarea>
+       <small style="color:#aaa;">Αν συμπληρωθεί, αυτό το μήνυμα θα σταλεί αντί για το προκαθορισμένο template.</small>
+      </div>
       <div class="toolbar" style="margin-top:12px;">
         <button class="btn" onclick="buildPreview()">Δημιουργία Προεπισκόπησης</button>
         <button class="btn good" onclick="sendNow()">Αποστολή</button>
@@ -626,7 +636,11 @@ def api_send():
 
     msg_id = _gen_id()
     landing_url = f"{PUBLIC_BASE_URL}/r?id={msg_id}"
-    text = f"Flying Dads Team ⚽\nΥπενθύμιση: Παίζουμε στο {place} την {date_} ώρα {time_}!\n👉 Δες περισσότερα: {landing_url}"
+    text = f"Flying Dads Team ⚽\nΥπενθύμιση: Παίζουμε μπαλίτσα στο {place} την {date_} ώρα {time_}!\n👉 Δες περισσότερα: {landing_url}"
+    # Αν ο χρήστης έγραψε ελεύθερο μήνυμα, το χρησιμοποιούμε
+    custom_message = request.form.get("customMessage", "").strip()
+    if custom_message:
+        text = custom_message
 
     ok, provider = yuboto_send_sms(YUBOTO_SENDER, text, msisdns)
 

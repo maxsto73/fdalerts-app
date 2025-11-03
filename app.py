@@ -323,17 +323,18 @@ INDEX_HTML = r"""
 
       <label>Προεπισκόπηση</label>
       <div class="preview" id="preview"></div>
-      <div class="form-group mb-3">
-        <label for="customMessage" style="font-weight:600;color:#ddd;">✉️ Ελεύθερο μήνυμα SMS</label>
-        <textarea
-         id="customMessage"
-         name="customMessage"
-         class="form-control"
-         rows="3"
-         placeholder="Γράψε εδώ το μήνυμα που θέλεις να στείλεις..."
-         style="background-color:#1e1e1e;color:#fff;border:1px solid #444;font-size:14px;border-radius:6px;padding:10px;"></textarea>
-       <small style="color:#aaa;">Αν συμπληρωθεί, αυτό το μήνυμα θα σταλεί αντί για το προκαθορισμένο template.</small>
+      <div class="mb-3">
+          <label for="customMessage" class="form-label">✉️ Ελεύθερο μήνυμα SMS</label>
+          <textarea
+            id="customMessage"
+            name="customMessage"
+            class="form-control"
+            rows="3"
+            placeholder="Γράψε εδώ το μήνυμα που θέλεις να στείλεις..."
+            style="font-size:14px;"></textarea>
+          <small class="text-muted">Αν συμπληρωθεί, το μήνυμα αυτό θα σταλεί αντί για το προκαθορισμένο.</small>
       </div>
+
       <div class="toolbar" style="margin-top:12px;">
         <button class="btn" onclick="buildPreview()">Δημιουργία Προεπισκόπησης</button>
         <button class="btn good" onclick="sendNow()">Αποστολή</button>

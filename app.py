@@ -323,24 +323,60 @@ INDEX_HTML = r"""
 
       <label>Προεπισκόπηση</label>
       <div class="preview" id="preview"></div>
-      <div class="mb-3">
-          <label for="customMessage" class="form-label">✉️ Ελεύθερο μήνυμα SMS</label>
-          <textarea
-            id="customMessage"
-            name="customMessage"
-            class="form-control"
-            rows="3"
-            placeholder="Γράψε εδώ το μήνυμα που θέλεις να στείλεις..."
-            style="font-size:14px;"></textarea>
-          <small class="text-muted">Αν συμπληρωθεί, το μήνυμα αυτό θα σταλεί αντί για το προκαθορισμένο.</small>
-      </div>
 
-      <div class="toolbar" style="margin-top:12px;">
-        <button class="btn" onclick="buildPreview()">Δημιουργία Προεπισκόπησης</button>
-        <button class="btn good" onclick="sendNow()">Αποστολή</button>
-      </div>
-      <div class="hint">Συντάσσεται και landing link αυτόματα με καταγραφή "Το είδα".</div>
-    </div>
+    <!-- 📨 Ελεύθερο μήνυμα SMS -->
+    <div class="mb-3">
+      <label for="customMessage" class="form-label">✉️ Ελεύθερο μήνυμα SMS</label>
+      <textarea
+        id="customMessage"
+        name="customMessage"
+        class="form-control"
+        rows="3"
+        maxlength="480"
+        placeholder="Γράψε εδώ το μήνυμα που θέλεις να στείλεις..."
+        style="font-size:14px;background-color:#1e1e1e;color:#fff;border:1px solid #444;border-radius:6px;padding:10px;"></textarea>
+   <div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px;">
+    <small style="color:#aaa;">Αν συμπληρωθεί, αυτό το μήνυμα θα σταλεί αντί για το προκαθορισμένο template.</small>
+    <small id="charCount" style="color:#888;">0/480 χαρακτήρες</small>
+  </div>
+</div>
+
+<!-- Toolbar -->
+<div class="toolbar" style="margin-top:12px;">
+  <button class="btn" onclick="buildPreview()">Δημιουργία Προεπισκόπησης</button>
+  <button class="btn good" onclick="sendNow()">Αποστολή</button>
+</div>
+
+<div class="hint">Συντάσσεται και landing link αυτόματα με καταγραφή "Το είδα".</div>
+
+<script>
+  // ✅ Μετρητής χαρακτήρων
+  const msgBox = document.getElementById('customMessage');
+  const counter = document.getElementById('charCount');
+  msgBox.addEventListener('input', () => {
+    const len = msgBox.value.length;
+    counter.textContent = `${len}/480 χαρακτήρες`;
+    if (len > 160) counter.style.color = '#f39c12';
+    if (len > 320) counter.style.color = '#e74c3c';
+    if (len <= 160) counter.style.color = '#888';
+  });
+
+  // ✅ Ενημέρωση sendNow για αποστολή custom message
+  const originalSendNow = sendNow;
+  sendNow = function() {
+    const formData = new FormData();
+    formData.append('numbers', document.getElementById('numbers').value);
+    formData.append('template', document.getElementById('template').value);
+    formData.append('customMessage', document.getElementById('customMessage').value);
+    fetch('/send', { method: 'POST', body: formData })
+      .then(r => r.json())
+      .then(data => {
+        if (data.success) alert('✅ Μήνυμα εστάλη!');
+        else alert('❌ Σφάλμα: ' + (data.error || 'Αποτυχία αποστολής'));
+      })
+      .catch(err => alert('⚠️ ' + err));
+  }
+</script>
 
     <div class="card">
       <h3>Ρυθμίσεις</h3>

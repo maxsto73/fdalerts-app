@@ -662,6 +662,10 @@ def api_send():
     time_ = (data.get("time") or "").strip()
     raw_numbers = data.get("raw_numbers") or ""
     channel = (data.get("channel") or "sms").strip()
+    
+    custom_message = request.form.get("customMessage", "").strip()
+    if custom_message:
+    text = custom_message
 
     msisdns = _normalize_msisdn_msisdns(raw_numbers)
     if not place or not date_ or not time_:

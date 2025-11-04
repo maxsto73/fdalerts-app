@@ -1,206 +1,174 @@
-# 🚀 FD Alerts — Raspberry Pi Automation Installer
+# ⚽ FDAlerts App
 
-Το **FD Alerts** είναι ένα πλήρες εργαλείο διαχείρισης που εγκαθιστά και συντηρεί
-την εφαρμογή *RasPiPush Ultimate* (FD Alerts Flask Service).  
-Σχεδιασμένο για **Raspberry Pi / Debian / Synology**, προσφέρει πλήρως αυτοματοποιημένη
-εγκατάσταση, ενημέρωση και δημιουργία αντιγράφων ασφαλείας.
+Flask εφαρμογή για αποστολή SMS (Yuboto OMNI) με landing link. Τρέχει είτε σε Raspberry / Synology με Docker, είτε μέσα από Portainer.
 
 ---
 
-## 🧩 Περιεχόμενα
-- [⚙️ Χαρακτηριστικά](#️-χαρακτηριστικά)
-- [📦 Εγκατάσταση](#-εγκατάσταση)
-- [🧹 Απεγκατάσταση](#-απεγκατάσταση)
-- [🛠️ Ενημέρωση / Επιδιόρθωση](#️-ενημέρωση--επιδιόρθωση)
-- [💾 Backup & Restore](#-backup--restore)
-- [🗂️ Ιστορικό Backups](#️-ιστορικό-backups)
-- [🧠 Ελάχιστες Απαιτήσεις](#-ελάχιστες-απαιτήσεις)
-- [📜 Credits](#-credits)
+## 1. Εγκατάσταση σε **Raspberry Pi** ή **Synology** μέσω **SSH**
 
----
+### 1.1 Προαπαιτούμενα
+- Εγκατεστημένο **Docker** και **docker compose**
+- Ένας φάκελος π.χ. `/opt/fdalerts` ή σε Synology: `/volume1/docker/fdalerts`
+- Πρόσβαση SSH
 
-## ⚙️ Χαρακτηριστικά
-
-✅ Πλήρης **αυτόματη εγκατάσταση** (Flask + systemd + virtualenv)  
-✅ **Απεγκατάσταση** με πλήρη καθαρισμό υπηρεσιών και αρχείων  
-✅ **Ενημέρωση** χωρίς απώλεια ρυθμίσεων (`config.json` / `messages.json`)  
-✅ **Logs viewer** – Προβολή τελευταίων καταγραφών  
-✅ **Restart & Status** με 1 επιλογή  
-✅ **Backup / Restore** για πλήρη ασφάλεια ρυθμίσεων  
-✅ **Ιστορικό Backups** με ημερομηνία, μέγεθος & αριθμό αρχείων  
-✅ Φιλικό UI στη γραμμή εντολών, με ελληνικά & progress animation ✨
-
----
-
-## 📦 Εγκατάσταση
-
-Εκτέλεσε απλώς την παρακάτω εντολή στο Raspberry Pi ή Synology:
-
+### 1.2 Κατέβασε το repo
 ```bash
-curl -sSL https://raw.githubusercontent.com/maxsto73/fdalerts-app/main/setup_fdalerts.txt | sudo bash
-
-=======================================
- 🚀 FD Alerts Management Utility
----------------------------------------
- 1) Εγκατάσταση (Clean Install)
- 2) Απεγκατάσταση
- 3) Ενημέρωση / Επιδιόρθωση
- 4) Προβολή Logs
- 5) Επανεκκίνηση Υπηρεσίας
- 6) Έλεγχος Κατάστασης
- 7) Backup / Restore Config
- 8) Προβολή Ιστορικού Backups
-=======================================
-
-Μετά την εγκατάσταση:
-
-Άνοιξε το web interface στο browser σου:
-
-👉 http://[IP_του_Raspberry]:8899
-
-🧹 Απεγκατάσταση
-
-Από το ίδιο μενού επίλεξε 2) Απεγκατάσταση.
-
-Αφαιρεί:
-
-Τον φάκελο /opt/raspipush_ultimate
-
-Το systemd service fdalerts.service
-
-🛠️ Ενημέρωση / Επιδιόρθωση
-
-Απλώς επίλεξε 3) και το script θα:
-
-Κατεβάσει την τελευταία έκδοση του repo
-
-Διατηρήσει config.json και messages.json
-
-Επανεκκινήσει την υπηρεσία αυτόματα
-
-💾 Backup & Restore
-
-Μέσω της επιλογής 7):
-
-Δημιουργεί backup των config.json & messages.json με timestamp
-(π.χ. /opt/backups_fdalerts/config_20251031_192300.json)
-
-Μπορείς να επαναφέρεις οποιοδήποτε προηγούμενο αρχείο εύκολα
-
-🗂️ Ιστορικό Backups
-
-Η επιλογή 8) προβάλλει λίστα όλων των αποθηκευμένων backups με:
-
-Ημερομηνία δημιουργίας
-
-Μέγεθος αρχείου
-
-Συνολικό πλήθος
-
-Διαδρομή αποθήκευσης (/opt/backups_fdalerts)
-
-🧠 Ελάχιστες Απαιτήσεις
-
-Raspberry Pi OS / Debian / Ubuntu / Synology (με systemd)
-
-Python 3.8+
-
-Ενεργό internet connection
-
-sudo δικαιώματα
-
-📜 Credits
-
-Ανάπτυξη: FDTeam 2012
-
-Σχεδίαση script & αυτοματισμού: @maxsto73
-
-Web API Integration: Yuboto SMS API
-
-Υποστηριζόμενο Project: RasPiPush Ultimate
-
-💡 Συνοψίζοντας
-
-Το εργαλείο αυτό καθιστά τη διαχείριση του FD Alerts εντελώς αυτοματοποιημένη:
-
-Από εγκατάσταση μέχρι backup, όλα γίνονται με ένα μόνο script!
-------------------------------------------------------------------------------------------------------------------------------------------
-------------------------------------------------------------------------------------------------------------------------------------------
----
-
-## 💻 Οδηγίες για Developers (Mac & Raspberry)
-
-Η ενότητα αυτή περιγράφει πώς μπορείς να τρέξεις, ενημερώσεις ή ανεβάσεις
-την εφαρμογή **FD Alerts** τόσο από Raspberry όσο και από MacOS.
-
----
-
-### 🧩 Εκτέλεση στο Raspberry Pi
-
-Για πλήρη εγκατάσταση ή ενημέρωση, εκτέλεσε την παρακάτω εντολή:
-
-```bash
-curl -sSL https://raw.githubusercontent.com/maxsto73/fdalerts-app/main/setup_fdalerts.txt | sudo bash
-💡 Αν θέλεις να το αποθηκεύσεις πρώτα και να το τρέξεις χειροκίνητα:
+mkdir -p /opt/fdalerts
+cd /opt/fdalerts
+git clone https://github.com/maxsto73/fdalerts-app.git .
+(αν το έχεις ήδη, κάνεις:)
 
 bash
 Αντιγραφή κώδικα
-curl -sSL https://raw.githubusercontent.com/maxsto73/fdalerts-app/main/setup_fdalerts.txt -o setup_fdalerts.txt
-chmod +x setup_fdalerts.txt
-sudo bash setup_fdalerts.txt
-Μετά την εγκατάσταση, η εφαρμογή θα είναι διαθέσιμη στο browser:
+cd /opt/fdalerts
+git pull
+1.3 Φτιάξε το .env
+Δημιούργησε αρχείο .env δίπλα στο docker-compose.yml:
 
-👉 http://[IP του Raspberry]:8899
+env
+Αντιγραφή κώδικα
+# Πόρτα που θα ακούει το Flask
+PORT=8899
 
-🧠 Κατέβασμα ολόκληρου του Repo (π.χ. σε νέο Pi)
-Αν θέλεις να εγκαταστήσεις από καθαρό περιβάλλον:
+# Yuboto OMNI ρυθμίσεις
+SMS_PROVIDER=omni
+YUBOTO_API_KEY=MDBCNDZFQTktREI1MS00NUMxLUEzRTktOTY3RTQ0NURGNjA1
+SMS_SENDER=FDTeam 2012
+
+# Για τα links που στέλνει με sms
+PUBLIC_BASE_URL=http://192.168.1.241:8899
+# Αν θες και domain όταν το σηκώνεις στο Synology reverse proxy:
+SECOND_PUBLIC_BASE_URL=https://app.fdteam2012.gr
+👉 Η εφαρμογή μπορεί να διαβάζει και τις δύο (PUBLIC_BASE_URL και SECOND_PUBLIC_BASE_URL) και να διαλέγεις ποια θα χρησιμοποιείς αργότερα μέσα από το app.
+
+1.4 Δημιούργησε docker-compose.yml
+yaml
+Αντιγραφή κώδικα
+version: "3.9"
+
+services:
+  fdalerts:
+    image: python:3.11-slim
+    container_name: fdalerts
+    working_dir: /app
+    env_file:
+      - .env
+    ports:
+      - "${PORT:-8899}:8899"
+    volumes:
+      # ο κώδικας από το repo
+      - ./app:/app
+      # logs / data κλπ
+      - ./data:/app/data
+    command: >
+      bash -c "
+        apt update &&
+        apt install -y git &&
+        git clone https://github.com/maxsto73/fdalerts-app.git . || true &&
+        pip install --no-cache-dir -r requirements.txt &&
+        python3 app.py
+      "
+    restart: unless-stopped
+Τι κάνει αυτό:
+
+ανοίγει την πόρτα 8899 προς τα έξω
+
+κατεβάζει το repo μέσα στο container
+
+εγκαθιστά Flask + requests
+
+τρέχει το app.py
+
+1.5 Εκκίνηση
+bash
+Αντιγραφή κώδικα
+docker compose up -d
+Δες ότι τρέχει:
 
 bash
 Αντιγραφή κώδικα
-cd /opt
-sudo apt install -y unzip
-wget https://github.com/maxsto73/fdalerts-app/archive/refs/heads/main.zip -O fdalerts.zip
-sudo unzip fdalerts.zip -d /opt
-sudo mv /opt/fdalerts-app-main /opt/raspipush_ultimate
-🧰 Ενημέρωση ή Ανέβασμα Αρχείων στο GitHub (MacOS)
-Αν έχεις αλλάξει αρχεία (π.χ. app.py, setup_fdalerts.txt, templates/, κ.λπ.)
-και θέλεις να ενημερώσεις το repo σου:
+docker ps
+docker logs -f fdalerts
+Άνοιξε:
 
-bash
+http://IP_TOU_PI:8899
+ή (αν έχεις βάλει reverse proxy)
+
+https://app.fdteam2012.gr
+
+2. Εγκατάσταση μέσω Portainer
+Αυτό είναι για Synology ή οπουδήποτε έχεις Portainer.
+
+2.1 Ετοίμασε έναν φάκελο στο NAS
+Π.χ.
+
+/volume1/docker/fdalerts/app
+
+/volume1/docker/fdalerts/data
+
+(σημαντικό: να υπάρχουν, γιατί το compose θα τα κάνει bind)
+
+2.2 Φτιάξε ένα .env στο NAS
+Φτιάξε αρχείο /volume1/docker/fdalerts/.env με:
+
+env
 Αντιγραφή κώδικα
-cd ~/Desktop/raspipush_ultimate
-git init
-git branch -M main
-git remote remove origin 2>/dev/null
-git remote add origin https://github.com/maxsto73/fdalerts-app.git
-git pull origin main --allow-unrelated-histories
-git add .
-git commit -m "Ενημέρωση αρχείων FD Alerts"
-git push -u origin main
-💡 Σημείωση: Αν σου ζητήσει password, βάλε το προσωπικό σου GitHub Personal Access Token (PAT),
-όχι τον κωδικό σου.
+PORT=8899
+SMS_PROVIDER=omni
+YUBOTO_API_KEY=MDBCNDZFQTktREI1MS00NUMxLUEzRTktOTY3RTQ0NURGNjA1
+SMS_SENDER=FDTeam 2012
+PUBLIC_BASE_URL=http://192.168.1.241:8899
+SECOND_PUBLIC_BASE_URL=https://app.fdteam2012.gr
+2.3 Άνοιξε Portainer → Stacks → Add Stack
+Δώσε όνομα π.χ. fdalerts και βάλε αυτό το YAML:
 
-🔁 Ενημέρωση μόνο (χωρίς νέα σύνδεση)
-Αν έχεις ήδη συνδεδεμένο το repo (git remote -v δείχνει το origin):
-
-bash
+yaml
 Αντιγραφή κώδικα
-cd ~/Desktop/raspipush_ultimate
-git add .
-git commit -m "Update app & installer"
-git push
-📜 Σύνοψη Εντολών
-Ενέργεια	Εντολή
-Εγκατάσταση στο Pi	curl -sSL https://raw.githubusercontent.com/maxsto73/fdalerts-app/main/setup_fdalerts.txt | sudo bash
-Τοπική εκτέλεση setup	curl -sSL … -o setup_fdalerts.txt && chmod +x setup_fdalerts.txt && sudo bash setup_fdalerts.txt
-Upload από Mac στο GitHub	git add . && git commit -m "update" && git push
-Κατέβασμα repo σε νέο Pi	wget https://github.com/maxsto73/fdalerts-app/archive/refs/heads/main.zip
+version: "3.9"
 
-🔧 Tip: Μπορείς να κρατήσεις ένα backup του setup script και στο Synology σου,
-ώστε αν ποτέ “πέσει” το GitHub, να μπορείς να τρέξεις:
+services:
+  fdalerts:
+    image: python:3.11-slim
+    container_name: fdalerts
+    working_dir: /app
+    env_file:
+      - /data/compose/{{.Stack.ID}}/.env
+    ports:
+      - "8899:8899"
+    volumes:
+      # προσαρμόζεις τα paths σου στο Synology
+      - /volume1/docker/fdalerts/app:/app
+      - /volume1/docker/fdalerts/data:/app/data
+    command: >
+      bash -c "
+        apt update &&
+        apt install -y git &&
+        cd /app &&
+        git clone https://github.com/maxsto73/fdalerts-app.git . || true &&
+        pip install --no-cache-dir -r requirements.txt &&
+        python3 app.py
+      "
+    restart: unless-stopped
+🔴 Αν το Portainer σου παραπονιέται ότι δεν βρίσκει το .env στο /data/compose/..., τότε απλά βάλε το πλήρες path του NAS σου:
 
-bash
+yaml
 Αντιγραφή κώδικα
-curl -sSL https://www.fdteam2012.gr/raspush/setup_fdalerts.txt | sudo bash
-📦 Τελευταία ενημέρωση: Νοέμβριος 2025
-👨‍💻 Συντήρηση: FDTeam 2012 / @maxsto73
+env_file:
+  - /volume1/docker/fdalerts/.env
+2.4 Deploy
+Πατάς Deploy the stack.
+Μετά δες τα logs από το container fdalerts για να σιγουρευτείς ότι κατέβηκε το repo και ξεκίνησε ο Flask.
+
+🟣 Σημειώσεις
+Αν δεν βλέπεις favicon, βεβαιώσου ότι ο φάκελος static/ υπάρχει μέσα στο bind mount (/volume1/docker/fdalerts/app/static).
+
+Αν το landing link ανοίγει σε 127.0.0.1, τότε στο .env βάλε την κανονική public διεύθυνση και κάνε docker compose restart.
+
+Αν θες να αλλάξεις πόρτα, άλλαξε το PORT= στο .env και το mapping στο compose.
+
+
+
+
+
+
+

@@ -1,3 +1,11 @@
+[![Docker Ready](https://img.shields.io/badge/Docker-Ready-blue?logo=docker)]()
+[![Version](https://img.shields.io/badge/version-v2025.11-green)]()
+[![Python](https://img.shields.io/badge/Python-3.11-yellow?logo=python)]()
+[![License](https://img.shields.io/badge/license-MIT-lightgrey)]()
+
+Flask-based SMS Automation System for FDTeam 2012 ⚽  
+Τρέχει σε Raspberry Pi ή Synology NAS μέσω Docker.
+
 # ⚽ FDAlerts App
 
 Flask εφαρμογή για αποστολή SMS (Yuboto OMNI) με landing link. Τρέχει είτε σε Raspberry / Synology με Docker, είτε μέσα από Portainer.

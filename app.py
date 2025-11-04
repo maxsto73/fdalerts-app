@@ -198,7 +198,7 @@ INDEX_HTML = r"""
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>FDTeam Alerts</title>
+  <title>FDTeam2012 Alerts</title>
   <link rel="manifest" href="{{ url_for('manifest_json') }}">
   <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}">
   <meta name="theme-color" content="#111827">

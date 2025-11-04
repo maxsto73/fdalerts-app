@@ -1,157 +1,102 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-
-# FDTeam Alerts - RasPi Push Ultimate (Flask)
-# Port: 8899
-#
-# Features:
-# - Send SMS via Yuboto OMNI API (Basic auth)
-# - Multi recipients (textarea + CSV upload)
-# - Landing page with "Το είδα" tracking
-# - Two-tab UI (Send / History), live preview
-# - Logs persisted to data/logs.json
-# - Simple PWA manifest + sw.js stub
-#
-# Env vars (systemd drop-in /etc/systemd/system/raspipush_ultimate.service.d/env.conf):
-# [Service]
-# Environment="YUBOTO_API_KEY=YOUR_BASE64_BASIC_KEY"
-# Environment="YUBOTO_SENDER=FDTeam 2012"
-# Environment="PUBLIC_BASE_URL=https://app.fdteam2012.gr"
-#
-# YUBOTO_API_KEY is the *base64* string used in Authorization: Basic <key>
-# Example from your setup: MDBCNDZFQTktREI1MS00NUMxLUEzRTktOTY3RTQ0NURGNjA1
-
 import os
 import json
-import csv
 import time
-import random
-import string
+import base64
+import uuid
 from pathlib import Path
 from datetime import datetime
-from flask import Flask, request, jsonify, send_from_directory, redirect, url_for, render_template_string, abort
 import requests
+from flask import (
+    Flask,
+    request,
+    jsonify,
+    send_from_directory,
+    redirect,
+    abort,
+    make_response,
+)
 
-# ---------- Paths / Config ----------
-BASE_DIR = Path("/opt/raspipush_ultimate")
+# -------------------------------------------------
+# Paths / config
+# -------------------------------------------------
+BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
-DATA_DIR.mkdir(parents=True, exist_ok=True)
+DATA_DIR.mkdir(exist_ok=True)
 
+MESSAGES_FILE = DATA_DIR / "messages.json"
 LOG_FILE = DATA_DIR / "logs.json"
-SEEN_FILE = DATA_DIR / "seen.json"
 
-YUBOTO_API_KEY = os.getenv("YUBOTO_API_KEY", "").strip()
-YUBOTO_SENDER = os.getenv("YUBOTO_SENDER", "FDTeam 2012").strip()
-PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "http://127.0.0.1:8899").strip()
+# -------------------------------------------------
+# Env / provider defaults
+# -------------------------------------------------
+# θα προσπαθήσει από .env / περιβάλλον
+SMS_API_KEY = os.getenv(
+    "SMS_API_KEY",
+    # fallback στο κλειδί που δοκίμασες
+    "MDBCNDZFQTktREI1MS00NUMxLUEzRTktOTY3RTQ0NURGNjA1",
+)
+SMS_SENDER = os.getenv("SMS_SENDER", "FDTeam 2012")
+PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "http://127.0.0.1:8899").rstrip("/")
+PORT = int(os.getenv("PORT", "8899"))
 
-# ---------- Helpers ----------
+YUBOTO_ENDPOINT = "https://services.yuboto.com/omni/v1/Send"
+
+app = Flask(__name__, static_folder=str(BASE_DIR / "static"))
+
+# -------------------------------------------------
+# Helpers
+# -------------------------------------------------
+
+
 def _read_json(path: Path, default):
     try:
-        if path.exists():
-            with path.open("r", encoding="utf-8") as f:
-                return json.load(f)
+        with path.open("r", encoding="utf-8") as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return default
     except Exception:
-        pass
-    return default
+        return default
+
 
 def _write_json(path: Path, data):
+    # απλό write σε tmp + rename για να μην κολλάει
     tmp = path.with_suffix(".tmp")
     with tmp.open("w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
     tmp.replace(path)
 
-def _gen_id(n=8):
-    return "".join(random.choices(string.hexdigits.lower(), k=n))
 
-def _now_str():
-    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-def _normalize_msisdn_msisdns(raw):
-    """
-    Accepts a string with numbers separated by comma/semicolon/newline/space,
-    returns a list of E.164-like without '+', tailored for GR:
-    - remove everything non-digit
-    - if starts with '0', drop it (local)
-    - if starts with '30', keep
-    - if starts with '69' (mobile), prefix '30'
-    """
-    if not raw:
-        return []
-    # unify separators
-    for ch in [",", ";", "\t"]:
-        raw = raw.replace(ch, "\n")
-    parts = [p.strip() for p in raw.splitlines() if p.strip()]
-    out = []
-    for p in parts:
-        digits = "".join([c for c in p if c.isdigit()])
-        if not digits:
-            continue
-        if digits.startswith("0"):
-            digits = digits[1:]
-        if digits.startswith("30"):
-            out.append(digits)
-        elif digits.startswith("69"):  # GR mobile local
-            out.append("30" + digits)
-        elif digits.startswith("0030"):
-            out.append(digits[2:])  # 0030xxxx -> 30xxxx
-        else:
-            # fallback: if already looks like intl (e.g., 357...), keep
-            out.append(digits)
-    # unique while preserving order
-    seen = set()
-    uniq = []
-    for d in out:
-        if d not in seen:
-            seen.add(d)
-            uniq.append(d)
-    return uniq
-
-def _parse_csv_numbers(file_storage):
-    """
-    Reads CSV, collects cells that look like numbers (first column by default),
-    returns list normalized by _normalize_msisdn_msisdns.
-    """
-    numbers = []
+def log_entry(entry: dict):
+    logs = _read_json(LOG_FILE, [])
+    logs.insert(0, entry)
+    # κράτα μέχρι 200
+    logs = logs[:200]
     try:
-        text = file_storage.read().decode("utf-8", errors="ignore")
-        file_storage.seek(0)
-        reader = csv.reader(text.splitlines())
-        for row in reader:
-            if not row:
-                continue
-            # take all columns, user might put numbers in multiple cols
-            for cell in row:
-                if cell and any(ch.isdigit() for ch in cell):
-                    numbers.append(cell)
-    except Exception:
+        _write_json(LOG_FILE, logs)
+    except PermissionError:
+        # αν δεν έχει δικαιώματα απλά το αγνοούμε
         pass
-    joined = "\n".join(numbers)
-    return _normalize_msisdn_msisdns(joined)
 
-# ---------- Provider: Yuboto OMNI ----------
-def yuboto_send_sms(sender, text, msisdns):
+
+def load_messages():
+    msgs = _read_json(MESSAGES_FILE, {})
+    return msgs
+
+
+def save_messages(msgs: dict):
+    _write_json(MESSAGES_FILE, msgs)
+
+
+def send_yuboto_omni(numbers, text, sender):
     """
-    Sends via Yuboto OMNI API:
     POST https://services.yuboto.com/omni/v1/Send
-    Headers: Authorization: Basic <YUBOTO_API_KEY> ; Content-Type: application/json; charset=utf-8
-    Body:
-    {
-      "dlr": false,
-      "contacts": [{"phonenumber": "3069...."}, ...],
-      "sms": {
-        "sender": "FDTeam 2012",
-        "text": "....",
-        "validity": 180,
-        "typesms": "sms",
-        "longsms": false,
-        "priority": 1
-      }
-    }
+    Authorization: Basic <api_key>
     """
-    if not YUBOTO_API_KEY:
-        return False, {"error": "Missing YUBOTO_API_KEY env"}
+    if not SMS_API_KEY:
+        return False, {"error": "Missing SMS_API_KEY"}
 
-    contacts = [{"phonenumber": n} for n in msisdns]
+    contacts = [{"phonenumber": n} for n in numbers]
     payload = {
         "dlr": False,
         "contacts": contacts,
@@ -161,21 +106,21 @@ def yuboto_send_sms(sender, text, msisdns):
             "validity": 180,
             "typesms": "sms",
             "longsms": False,
-            "priority": 1
-        }
+            "priority": 1,
+        },
     }
+
     try:
         resp = requests.post(
-            "https://services.yuboto.com/omni/v1/Send",
+            YUBOTO_ENDPOINT,
             headers={
-                "Authorization": f"Basic {YUBOTO_API_KEY}",
-                "Content-Type": "application/json; charset=utf-8"
+                "Authorization": f"Basic {SMS_API_KEY}",
+                "Content-Type": "application/json; charset=utf-8",
             },
             json=payload,
-            timeout=30
+            timeout=30,
         )
         ok = 200 <= resp.status_code < 300
-        data = None
         try:
             data = resp.json()
         except Exception:
@@ -184,530 +129,368 @@ def yuboto_send_sms(sender, text, msisdns):
     except Exception as e:
         return False, {"exception": str(e)}
 
-# ---------- Flask ----------
-app = Flask(__name__, static_folder=str(BASE_DIR / "static"))
 
-# ----- HTML (Jinja) -----
+# -------------------------------------------------
+# HTML (dark) – με extra πεδίο ελεύθερου sms
+# -------------------------------------------------
 INDEX_HTML = r"""
-{% macro icon(name, cls="w-5 h-5") -%}
-  <span class="{{ cls }}" style="display:inline-flex;align-items:center;justify-content:center">⚽</span>
-{%- endmacro %}
-
 <!doctype html>
 <html lang="el">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>FDTeam Alerts</title>
-  <link rel="manifest" href="{{ url_for('manifest_json') }}">
-  <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}">
-  <meta name="theme-color" content="#111827">
+  <meta charset="utf-8" />
+  <title>FD Alerts</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <link rel="icon" href="/static/favicon.ico">
   <style>
-  /* reset + playful theme */
-  :root {
-    --bg: #0b1020;
-    --card: #121a33;
-    --muted: #9aa5b1;
-    --primary: #4f46e5;
-    --primary-2: #7c3aed;
-    --accent: #00d4ff;
-    --good: #16a34a;
-    --bad: #dc2626;
-  }
-  * { box-sizing: border-box; }
-  html, body { margin:0; padding:0; background: radial-gradient(1200px 800px at 10% 10%, #111b3a 0%, #0b1020 60%); color:#e5e7eb; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
-  a { color: var(--accent); text-decoration: none; }
-  .wrap { max-width: 980px; margin: 0 auto; padding: 16px; }
-  .brand { display:flex; align-items:center; gap:12px; margin: 12px 0 20px; }
-  .brand img { width:48px; height:48px; border-radius: 12px; box-shadow: 0 0 24px rgba(0,212,255,.2); }
-  .title { font-size: 1.6rem; font-weight: 800; letter-spacing: .4px; display:flex; align-items:center; gap: 10px; }
-  .tabs { display:flex; gap: 8px; background: rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.08); padding: 6px; border-radius: 14px; width:max-content; }
-  .tab { padding: 8px 12px; border-radius: 10px; cursor: pointer; color:#cbd5e1; user-select:none; }
-  .tab.active { background: linear-gradient(90deg, var(--primary), var(--primary-2)); color:#fff; box-shadow: 0 6px 22px rgba(79,70,229,.35); }
-
-  .grid { display:grid; grid-template-columns: 1.2fr .8fr; gap: 16px; margin-top: 16px; }
-  @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
-
-  .card { background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.02)); border:1px solid rgba(255,255,255,.06);
-          border-radius: 18px; padding: 16px; box-shadow: 0 8px 30px rgba(0,0,0,.25), inset 0 1px 0 rgba(255,255,255,.06); backdrop-filter: blur(6px); }
-  .card h3 { margin: 0 0 10px; font-size: 1.1rem; color:#fff; }
-  label { display:block; font-size:.9rem; color:#cbd5e1; margin: 8px 0 6px; }
-  input[type="text"], input[type="date"], input[type="time"], textarea, select {
-    width:100%; padding: 10px 12px; background:#0f1530; color:#e5e7eb; border:1px solid #29304f; border-radius: 12px; outline:none;
-  }
-  textarea { min-height: 106px; resize: vertical; }
-  .row { display:grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-  .hint { color: var(--muted); font-size: .82rem; }
-
-  .btn { display:inline-flex; align-items:center; justify-content:center; gap:8px; padding: 10px 14px; border-radius: 12px; cursor:pointer;
-         border:1px solid transparent; background: linear-gradient(90deg, var(--primary), var(--primary-2)); color:#fff; font-weight: 600; }
-  .btn.secondary { background: #0f1530; border-color:#2a3357; color:#cbd5e1; }
-  .btn.good { background: linear-gradient(90deg, #059669, #16a34a); }
-  .btn.bad  { background: linear-gradient(90deg, #b91c1c, #dc2626); }
-  .toolbar { display:flex; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
-
-  .preview { white-space: pre-wrap; background:#0f1530; border:1px dashed #334; padding: 12px; border-radius:12px; color:#dbeafe; min-height: 100px; }
-
-  .chip { display:inline-flex; align-items:center; gap:6px; padding:6px 10px; background:#0f1530; border:1px solid #2a3357; color:#cbd5e1; border-radius: 999px; font-size:.85rem; }
-  .chips { display:flex; gap: 8px; flex-wrap: wrap; }
-
-  .logrow { display:grid; grid-template-columns: 120px 1fr 220px; gap: 12px; padding:10px; border-bottom:1px solid rgba(255,255,255,.06); }
-  @media (max-width: 700px) { .logrow { grid-template-columns: 1fr; } }
-
-  /* playful balls */
-  .bg-balls { position: fixed; inset: 0; pointer-events:none; z-index: -1; }
-  .ball { position:absolute; width: 120px; height:120px; border-radius: 50%; filter: blur(24px); opacity:.22; animation: float 16s ease-in-out infinite; }
-  .ball.a { background:#7c3aed; top:10%; left:6%; }
-  .ball.b { background:#00d4ff; bottom: 12%; right:12%; animation-delay: -4s; }
-  .ball.c { background:#4f46e5; top: 40%; right: 24%; animation-delay: -8s; }
-  @keyframes float { 0% { transform: translateY(0) } 50% { transform: translateY(-22px) } 100% { transform: translateY(0) } }
-
-  .footer { color:#9aa5b1; font-size:.8rem; text-align:center; margin-top: 18px; }
-  </style>
-</head>
-<body>
-<div class="bg-balls">
-  <div class="ball a"></div>
-  <div class="ball b"></div>
-  <div class="ball c"></div>
-</div>
-
-<div class="wrap">
-  <div class="brand">
-    <img src="{{ url_for('static', filename='icons/logo_final.png') }}" alt="FD">
-    <div class="title">FDTeam Alerts <span class="chip">v2025.10</span></div>
-  </div>
-
-  <div class="tabs">
-    <div class="tab active" id="tab-send" onclick="switchTab('send')">Αποστολή</div>
-    <div class="tab" id="tab-history" onclick="switchTab('history')">Ιστορικό</div>
-  </div>
-
-  <div id="page-send" class="grid" style="margin-top:14px;">
-    <div class="card">
-      <h3>Στοιχεία Ειδοποίησης</h3>
-      <div class="row">
-        <div>
-          <label>Γήπεδο / Τοποθεσία</label>
-          <input id="place" type="text" placeholder="π.χ. Δαβουρλής Arena">
-        </div>
-        <div>
-          <label>Κανάλι</label>
-          <select id="channel">
-            <option value="sms" selected>SMS (Yuboto OMNI)</option>
-          </select>
-        </div>
-      </div>
-
-      <div class="row">
-        <div>
-          <label>Ημερομηνία</label>
-          <input id="date" type="date">
-        </div>
-        <div>
-          <label>Ώρα</label>
-          <input id="time" type="time">
-        </div>
-      </div>
-
-      <label>Παραλήπτες (ένας ανά γραμμή, κόμμα ή ;)</label>
-      <textarea id="numbers" placeholder="+3069..., 69..., 3069..., κλπ"></textarea>
-      <div class="toolbar">
-        <label class="btn secondary">
-          Ανέβασμα CSV
-          <input id="csvfile" type="file" accept=".csv" style="display:none" onchange="handleCSV(this)">
-        </label>
-        <button class="btn secondary" onclick="dedupeNumbers()">Καθαρισμός/Μοναδικοί</button>
-        <span class="chip"><span id="counter">0</span> αριθμοί</span>
-      </div>
-
-      <label>Προεπισκόπηση</label>
-      <div class="preview" id="preview"></div>
-
-    <!-- 📨 Ελεύθερο μήνυμα SMS -->
-    <div class="mb-3">
-      <label for="customMessage" class="form-label">✉️ Ελεύθερο μήνυμα SMS</label>
-      <textarea
-        id="customMessage"
-        name="customMessage"
-        class="form-control"
-        rows="3"
-        maxlength="480"
-        placeholder="Γράψε εδώ το μήνυμα που θέλεις να στείλεις..."
-        style="font-size:14px;background-color:#1e1e1e;color:#fff;border:1px solid #444;border-radius:6px;padding:10px;"></textarea>
-   <div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px;">
-    <small style="color:#aaa;">Αν συμπληρωθεί, αυτό το μήνυμα θα σταλεί αντί για το προκαθορισμένο template.</small>
-    <small id="charCount" style="color:#888;">0/480 χαρακτήρες</small>
-  </div>
-</div>
-
-<!-- Toolbar -->
-<div class="toolbar" style="margin-top:12px;">
-  <button class="btn" onclick="buildPreview()">Δημιουργία Προεπισκόπησης</button>
-  <button class="btn good" onclick="sendNow()">Αποστολή</button>
-</div>
-
-<div class="hint">Συντάσσεται και landing link αυτόματα με καταγραφή "Το είδα".</div>
-
-<script>
-  // ✅ Μετρητής χαρακτήρων
-  const msgBox = document.getElementById('customMessage');
-  const counter = document.getElementById('charCount');
-  msgBox.addEventListener('input', () => {
-    const len = msgBox.value.length;
-    counter.textContent = `${len}/480 χαρακτήρες`;
-    if (len > 160) counter.style.color = '#f39c12';
-    if (len > 320) counter.style.color = '#e74c3c';
-    if (len <= 160) counter.style.color = '#888';
-  });
-
-  // ✅ Ενημέρωση sendNow για αποστολή custom message
-  const originalSendNow = sendNow;
-  sendNow = function() {
-    const formData = new FormData();
-    formData.append('numbers', document.getElementById('numbers').value);
-    formData.append('template', document.getElementById('template').value);
-    formData.append('customMessage', document.getElementById('customMessage').value);
-    fetch('/send', { method: 'POST', body: formData })
-      .then(r => r.json())
-      .then(data => {
-        if (data.success) alert('✅ Μήνυμα εστάλη!');
-        else alert('❌ Σφάλμα: ' + (data.error || 'Αποτυχία αποστολής'));
-      })
-      .catch(err => alert('⚠️ ' + err));
-  }
-</script>
-
-    <div class="card">
-      <h3>Ρυθμίσεις</h3>
-      <div class="chips">
-        <div class="chip">Sender: <strong>&nbsp;{{ sender }}</strong></div>
-        <div class="chip">Provider: <strong>&nbsp;Yuboto OMNI</strong></div>
-        <div class="chip">Base URL: <strong>&nbsp;{{ base_url }}</strong></div>
-      </div>
-      <p class="hint" style="margin-top:8px">Το sender και το API key είναι από το systemd env.</p>
-      <hr style="border-color: rgba(255,255,255,.06)">
-      <p class="hint">PWA: Πρόσθεσε στη συσκευή σου (iOS/Android) για γρήγορη πρόσβαση.</p>
-    </div>
-  </div>
-
-  <div id="page-history" class="card" style="display:none; margin-top:14px;">
-    <h3>Ιστορικό</h3>
-    <div id="history"></div>
-  </div>
-
-  <div class="footer">© FDTeam 2012 — built for RasPi • Alerts & Landing with ❤️</div>
-</div>
-
-<script>
-if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('/sw.js').catch(()=>{});
-}
-
-// tabs
-function switchTab(name){
-  for (const id of ["send","history"]) {
-    document.getElementById("page-"+id).style.display = (id===name)?"block":"none";
-    document.getElementById("tab-"+id).classList.toggle("active", id===name);
-  }
-  if (name==='history') loadHistory();
-}
-
-// CSV
-function handleCSV(input){
-  const f = input.files && input.files[0];
-  if(!f) return;
-  const form = new FormData();
-  form.append('file', f);
-  fetch('/api/parse_csv', { method:'POST', body: form })
-    .then(r => r.json())
-    .then(j => {
-      const area = document.getElementById('numbers');
-      const existing = area.value ? area.value + "\\n" : "";
-      area.value = existing + (j.numbers || []).join("\\n");
-      updateCounter();
-    })
-    .catch(()=>{});
-}
-
-function updateCounter(){
-  const area = document.getElementById('numbers');
-  const raw = area.value || "";
-  const list = raw.split(/[\n,;]+/).map(s=>s.trim()).filter(Boolean);
-  document.getElementById('counter').textContent = list.length;
-}
-
-function dedupeNumbers(){
-  const area = document.getElementById('numbers');
-  const raw = area.value || "";
-  fetch('/api/dedupe', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ raw })})
-    .then(r=>r.json()).then(j=>{
-      area.value = (j.numbers || []).join("\\n");
-      updateCounter();
-    });
-}
-
-function makeText(place, date, time, landingUrl){
-  const lines = [
-    "Flying Dads Team ⚽",
-    "Υπενθύμιση: Παίζουμε Μπαλίτσα στο " + place + " την " + date + " ώρα " + time + "!",
-    "👉 Δες περισσότερα: " + landingUrl
-  ];
-  return lines.join("\\n");
-}
-
-function buildPreview(){
-  const place = document.getElementById('place').value.trim();
-  const date = document.getElementById('date').value;
-  const timeV = document.getElementById('time').value;
-  const numbers = document.getElementById('numbers').value.trim();
-  const tmpId = Math.random().toString(16).slice(2,10);
-  const landing = "{{ base_url }}/r?id=" + tmpId;
-  const txt = makeText(place, date, timeV, landing);
-  document.getElementById('preview').textContent = txt;
-}
-
-async function sendNow(){
-  const place = document.getElementById('place').value.trim();
-  const date = document.getElementById('date').value;
-  const timeV = document.getElementById('time').value;
-  const channel = document.getElementById('channel').value;
-  const raw_numbers = document.getElementById('numbers').value;
-
-  const res = await fetch('/send', {
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({ place, date, time: timeV, channel, raw_numbers })
-  });
-  const j = await res.json();
-  if(j.ok){
-    alert("✅ Έφυγε! Landing: " + j.landing);
-    switchTab('history');
-  }else{
-    alert("❌ Αποτυχία: " + (j.error || 'unknown'));
-  }
-}
-
-// history
-function loadHistory(){
-  fetch('/api/get_logs').then(r=>r.json()).then(j=>{
-    const box = document.getElementById('history');
-    const arr = j.logs || [];
-    if(!arr.length){ box.innerHTML = '<div class="hint">Κενό ιστορικό…</div>'; return; }
-    let html = '';
-    for (const x of arr.slice().reverse()){
-      const seen = (x.seen_by||[]).length ? ('✅ ' + (x.seen_by||[]).length + ' είδαν') : '—';
-      html += `
-        <div class="logrow">
-          <div class="hint">${x.timestamp||''}</div>
-          <div>
-            <div><strong>${(x.text||'').replace(/</g,'&lt;')}</strong></div>
-            <div class="hint">Recipients: ${ (x.msisdns||[]).join(', ') }</div>
-            <div class="hint">Landing: <a href="${x.landing}" target="_blank">${x.landing}</a></div>
-          </div>
-          <div>
-            <div class="chip">${seen}</div>
-            <div class="chip" style="margin-top:6px;">ID: ${x.id}</div>
-          </div>
-        </div>
-      `;
+    :root {
+      --bg: #0f172a;
+      --panel: #1e293b;
+      --panel2: #111827;
+      --accent: #38bdf8;
+      --accent2: #0ea5e9;
+      --text: #e2e8f0;
+      --muted: #94a3b8;
+      --danger: #f43f5e;
+      --radius: 14px;
     }
-    box.innerHTML = html;
-  });
-}
-
-document.getElementById('numbers').addEventListener('input', updateCounter);
-</script>
-</body>
-</html>
-"""
-
-LANDING_HTML = r"""
-<!doctype html>
-<html lang="el">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>FDTeam Alert</title>
-  <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}">
-  <style>
-    body{margin:0;background:radial-gradient(1000px 600px at 15% 10%, #1c2244 0%, #0b1020 60%); color:#e5e7eb; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;}
-    .wrap{max-width:820px;margin:0 auto;padding:18px;}
-    .card{background:linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.02)); border:1px solid rgba(255,255,255,.06);
-          border-radius:18px; padding:16px; margin-top:16px;}
-    .title{display:flex;align-items:center;gap:10px;font-size:1.4rem;font-weight:800}
-    .msg{white-space: pre-wrap; background:#0f1530; border:1px dashed #334; padding:12px; border-radius:12px; margin-top:10px;}
-    .btn{display:inline-flex; gap:8px; align-items:center; background:linear-gradient(90deg,#059669,#16a34a); color:#fff; padding:10px 14px; border-radius:12px; border:0; cursor:pointer; font-weight:700}
-    .hint{color:#9aa5b1; font-size:.85rem}
+    * { box-sizing: border-box; }
+    body {
+      margin:0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: radial-gradient(circle at top, #0f172a 0%, #020617 60%);
+      color: var(--text);
+      min-height:100vh;
+      display:flex;
+      flex-direction:column;
+    }
+    header {
+      background: rgba(15,23,42,0.7);
+      backdrop-filter: blur(6px);
+      border-bottom: 1px solid rgba(148,163,184,0.1);
+      padding: 14px 18px;
+      display:flex; align-items:center; gap:10px;
+    }
+    header img {
+      width: 28px; height:28px;
+    }
+    .title {
+      font-weight:600;
+      letter-spacing: -0.01em;
+    }
+    main {
+      display:flex;
+      gap:18px;
+      padding:18px;
+      flex:1;
+      align-items:flex-start;
+    }
+    .card {
+      background: radial-gradient(circle at top, #1f2937 0%, #0f172a 70%);
+      border: 1px solid rgba(148,163,184,0.1);
+      border-radius: var(--radius);
+      padding: 16px;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.25);
+    }
+    .left { flex: 2; display:flex; flex-direction:column; gap:16px; }
+    .right { flex: 1; display:flex; flex-direction:column; gap:16px; }
+    label {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--muted);
+      margin-bottom: 4px;
+      display:block;
+    }
+    input, select, textarea {
+      width:100%;
+      background: rgba(15,23,42,0.3);
+      border: 1px solid rgba(148,163,184,0.08);
+      border-radius: 10px;
+      padding: 8px 10px;
+      color: var(--text);
+      font-size: 0.9rem;
+      outline:none;
+    }
+    input:focus, select:focus, textarea:focus {
+      border-color: rgba(56,189,248,0.7);
+      background: rgba(15,23,42,0.6);
+    }
+    textarea { min-height: 90px; resize: vertical; }
+    button {
+      background: linear-gradient(135deg, var(--accent) 0%, var(--accent2) 100%);
+      border:none;
+      border-radius: 9999px;
+      color: #0f172a;
+      font-weight:600;
+      padding: 9px 16px;
+      cursor:pointer;
+      display:inline-flex;
+      gap:6px;
+      align-items:center;
+    }
+    .btn-secondary {
+      background: rgba(15,23,42,0.3);
+      border: 1px solid rgba(148,163,184,0.1);
+      color: var(--text);
+    }
+    .flex { display:flex; gap:10px; }
+    .flex-col { display:flex; flex-direction:column; gap:8px; }
+    .w-50 { width:50%; }
+    .logs-list {
+      max-height: 280px;
+      overflow-y:auto;
+    }
+    .log-item {
+      border-bottom: 1px solid rgba(148,163,184,0.04);
+      padding:6px 0;
+      font-size:0.75rem;
+    }
+    .badge {
+      background: rgba(148,163,184,0.12);
+      padding:2px 6px;
+      border-radius:9999px;
+      font-size:0.62rem;
+      text-transform:uppercase;
+      letter-spacing:0.04em;
+    }
+    @media (max-width: 900px) {
+      main { flex-direction:column; }
+      .left,.right { width:100%; }
+      .flex { flex-direction:column; }
+      .w-50 { width:100%; }
+    }
   </style>
 </head>
 <body>
-<div class="wrap">
-  <div class="title"><img src="{{ url_for('static', filename='icons/logo_final.png') }}" style="width:40px;height:40px;border-radius:10px"> FDTeam Ειδοποίηση</div>
-  <div class="card">
-    <div class="hint">ID: {{ mid }}</div>
-    <div class="msg">{{ text }}</div>
-    <div style="margin-top:12px">
-      <button class="btn" onclick="markSeen()">✅ Το είδα</button>
+  <header>
+    <img src="/static/icons/logo_final.png" alt="logo" onerror="this.style.display='none'">
+    <div>
+      <div class="title">FD Alerts</div>
+      <div style="font-size:0.65rem; color:var(--muted)">Υπενθυμίσεις ομάδας • SMS μέσω Yuboto OMNI</div>
     </div>
-  </div>
-  <p class="hint">Ευχαριστούμε! Καλή διασκέδαση ⚽</p>
-</div>
-<script>
-function markSeen(){
-  fetch('/seen', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ id: "{{ mid }}" })})
-    .then(()=>{ alert("Καταγράφηκε!"); })
-    .catch(()=>{ alert("Προέκυψε σφάλμα, δοκίμασε ξανά.") });
-}
-</script>
+  </header>
+  <main>
+    <div class="left">
+      <form id="sendForm" action="/send" method="post" enctype="multipart/form-data" class="card">
+        <h2 style="margin-top:0; font-size:1rem;">📤 Αποστολή SMS</h2>
+
+        <div class="flex">
+          <div class="w-50 flex-col">
+            <label for="sender">Αποστολέας</label>
+            <input id="sender" name="sender" value="{{ sender }}" />
+          </div>
+          <div class="w-50 flex-col">
+            <label for="date">Ημερομηνία</label>
+            <input id="date" name="date" type="date" value="{{ today }}" />
+          </div>
+        </div>
+
+        <div class="flex">
+          <div class="w-50 flex-col">
+            <label for="time">Ώρα</label>
+            <input id="time" name="time" type="time" value="20:45" />
+          </div>
+          <div class="w-50 flex-col">
+            <label for="template">Template</label>
+            <select id="template" name="template">
+              <option value="">-- Επέλεξε --</option>
+              {% for mid, mtext in messages.items() %}
+              <option value="{{ mid }}">{{ mtext[:60].replace('\n',' ') }}...</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+
+        <div class="flex-col">
+          <label for="linkid">Landing Link</label>
+          <input id="linkid" name="linkid" placeholder="(προαιρετικό) id για /r?id=..." />
+          <small style="color:var(--muted); font-size:0.65rem;">
+            Αν δώσεις id, το sms θα δείχνει: {{ public_base }}/r?id=&lt;id&gt;
+          </small>
+        </div>
+
+        <div class="flex-col">
+          <label for="numbers">Τηλέφωνα (ένα ανά γραμμή)</label>
+          <textarea id="numbers" name="numbers" placeholder="+3069..., 69..., 003069..."></textarea>
+        </div>
+
+        <div class="flex-col">
+          <label for="csv">ή ανέβασμα CSV (1 στήλη με αριθμούς)</label>
+          <input id="csv" name="csv" type="file" accept=".csv,text/csv" />
+        </div>
+
+        <div class="flex-col">
+          <label for="free_sms">✉️ Ελεύθερο SMS (αν το συμπληρώσεις, αυτό θα σταλεί)</label>
+          <textarea id="free_sms" name="free_sms" placeholder="Γράψε εδώ μήνυμα που θα σταλεί αυτούσιο..."></textarea>
+        </div>
+
+        <div style="margin-top:12px; display:flex; gap:10px;">
+          <button type="submit">📨 Αποστολή</button>
+          <button type="reset" class="btn-secondary">Καθαρισμός</button>
+        </div>
+      </form>
+    </div>
+    <div class="right">
+      <div class="card">
+        <h3 style="margin-top:0; font-size:0.95rem;">🧾 Πρόσφατα logs</h3>
+        <div id="logs" class="logs-list">
+          {% for log in logs %}
+          <div class="log-item">
+            <div><span class="badge">{{ log.timestamp }}</span></div>
+            <div>{{ log.message }}</div>
+            {% if log.recipients %}<div style="color:var(--muted)">➡ {{ ", ".join(log.recipients) }}</div>{% endif %}
+            {% if log.provider %}<div style="color:var(--muted); font-size:0.65rem;">{{ log.provider }}</div>{% endif %}
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+      <div class="card">
+        <h3 style="margin-top:0; font-size:0.9rem;">ℹ️ Info</h3>
+        <p style="font-size:0.75rem; color:var(--muted);">
+          Provider: Yuboto OMNI<br>
+          Endpoint: <code style="font-size:0.62rem;">/omni/v1/Send</code><br>
+          Base URL: <code style="font-size:0.62rem;">{{ public_base }}</code>
+        </p>
+      </div>
+    </div>
+  </main>
 </body>
 </html>
 """
 
-# ---------- Routes ----------
+# -------------------------------------------------
+# Routes
+# -------------------------------------------------
+
+
 @app.route("/")
 def index():
-    html = render_template_string(
-        INDEX_HTML,
-        sender=YUBOTO_SENDER,
-        base_url=PUBLIC_BASE_URL
+    messages = load_messages()
+    logs = _read_json(LOG_FILE, [])
+    today = datetime.now().strftime("%Y-%m-%d")
+    html = INDEX_HTML.replace("{{ sender }}", SMS_SENDER)
+    html = html.replace("{{ today }}", today)
+    html = html.replace("{{ public_base }}", PUBLIC_BASE_URL)
+
+    # Jinja-like render for messages/logs
+    # για να μην βάζουμε πραγματικό Jinja εδώ, θα κάνουμε ένα μικρό fake
+    from jinja2 import Template
+
+    t = Template(INDEX_HTML)
+    return t.render(
+        sender=SMS_SENDER,
+        today=today,
+        public_base=PUBLIC_BASE_URL,
+        messages=messages,
+        logs=logs,
     )
-    return html
 
-@app.route("/history")
-def history_page():
-    # Keep for direct navigation / compatibility; reuses index UI
-    return redirect(url_for("index"))
 
-@app.route("/manifest.json")
-def manifest_json():
-    data = {
-        "name": "FDTeam Alerts",
-        "short_name": "FD Alerts",
-        "start_url": "/",
-        "display": "standalone",
-        "background_color": "#0b1020",
-        "theme_color": "#111827",
-        "icons": [
-            {"src": "/static/icons/icon-180.png", "sizes": "180x180", "type": "image/png"},
-            {"src": "/static/icons/icon-512.png", "sizes": "512x512", "type": "image/png"}
-        ]
-    }
-    return jsonify(data)
+@app.route("/send", methods=["POST"])
+def api_send():
+    messages = load_messages()
 
-@app.route("/sw.js")
-def sw_js():
-    js = (
-        "self.addEventListener('install',e=>self.skipWaiting());"
-        "self.addEventListener('activate',e=>self.clients.claim());"
-        "self.addEventListener('fetch',()=>{});"
+    sender = request.form.get("sender") or SMS_SENDER
+    template_id = request.form.get("template") or ""
+    date_str = request.form.get("date") or ""
+    time_str = request.form.get("time") or ""
+    link_id = request.form.get("linkid") or ""
+    numbers_raw = request.form.get("numbers") or ""
+    free_sms = request.form.get("free_sms") or ""
+
+    # collect numbers
+    numbers = []
+    for line in numbers_raw.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        # normalize
+        if line.startswith("00"):
+            line = line[2:]
+        if line.startswith("30") and not line.startswith("+"):
+            line = "+" + line
+        if line.startswith("69") and not line.startswith("+30"):
+            line = "+30" + line
+        numbers.append(line)
+
+    # CSV
+    if "csv" in request.files and request.files["csv"].filename:
+        f = request.files["csv"]
+        content = f.read().decode("utf-8", errors="ignore")
+        for line in content.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            if line.startswith("00"):
+                line = line[2:]
+            if line.startswith("30") and not line.startswith("+"):
+                line = "+" + line
+            if line.startswith("69") and not line.startswith("+30"):
+                line = "+30" + line
+            numbers.append(line)
+
+    numbers = list(dict.fromkeys(numbers))  # dedupe
+
+    # build message
+    if free_sms.strip():
+        final_msg = free_sms.strip()
+    else:
+        base_msg = messages.get(template_id, "").replace("\\n", "\n")
+        # κάνε μικρές αντικαταστάσεις αν θες
+        final_msg = base_msg
+        if date_str:
+            final_msg = final_msg.replace("2025-10-27", date_str)
+        if time_str:
+            final_msg = final_msg.replace("20:45", time_str)
+        if link_id:
+            final_msg += f"\n👉 Δες περισσότερα: {PUBLIC_BASE_URL}/r?id={link_id}"
+
+    ok = False
+    provider_info = {}
+    if numbers:
+        ok, provider_info = send_yuboto_omni(numbers, final_msg, sender)
+
+    log_entry(
+        {
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "message": final_msg,
+            "recipients": numbers,
+            "provider": "yuboto_omni",
+            "provider_info": provider_info,
+            "ok": ok,
+        }
     )
-    return js, 200, {"Content-Type":"application/javascript"}
 
-@app.route("/api/parse_csv", methods=["POST"])
-def api_parse_csv():
-    if "file" not in request.files:
-        return jsonify({"numbers":[]})
-    nums = _parse_csv_numbers(request.files["file"])
-    return jsonify({"numbers": nums})
+    if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+        return jsonify({"ok": ok, "provider": provider_info})
 
-@app.route("/api/dedupe", methods=["POST"])
-def api_dedupe():
-    data = request.get_json(silent=True) or {}
-    raw = data.get("raw","")
-    nums = _normalize_msisdn_msisdns(raw)
-    return jsonify({"numbers": nums})
+    if ok:
+        return redirect("/")
+    else:
+        return make_response("Provider error", 500)
+
 
 @app.route("/api/get_logs")
 def api_get_logs():
     logs = _read_json(LOG_FILE, [])
-    return jsonify({"logs": logs})
+    return jsonify(logs)
+
 
 @app.route("/r")
 def landing():
-    mid = request.args.get("id","").strip()
-    if not mid:
-        abort(404)
-    logs = _read_json(LOG_FILE, [])
-    msg = next((x for x in logs if x.get("id")==mid), None)
-    if not msg:
-        abort(404)
-    html = render_template_string(LANDING_HTML, mid=mid, text=msg.get("text",""))
-    return html
+    mid = request.args.get("id", "")
+    messages = load_messages()
+    txt = messages.get(mid, "Μήνυμα δεν βρέθηκε.")
+    return f"<html><body><h3>FD Alerts</h3><pre>{txt}</pre></body></html>"
 
-@app.route("/seen", methods=["POST"])
-def api_seen():
-    data = request.get_json(silent=True) or {}
-    mid = data.get("id","").strip()
-    if not mid:
-        return jsonify({"ok": False, "error":"missing id"}), 400
-    logs = _read_json(LOG_FILE, [])
-    updated = False
-    for x in logs:
-        if x.get("id")==mid:
-            sb = x.get("seen_by", [])
-            sb.append({"ts": _now_str(), "ip": request.remote_addr})
-            x["seen_by"] = sb
-            updated = True
-            break
-    if updated:
-        _write_json(LOG_FILE, logs)
-    return jsonify({"ok": True})
 
-@app.route("/send", methods=["POST"])
-def api_send():
-    data = request.get_json(silent=True) or {}
-    place = (data.get("place") or "").strip()
-    date_ = (data.get("date") or "").strip()
-    time_ = (data.get("time") or "").strip()
-    raw_numbers = data.get("raw_numbers") or ""
-    channel = (data.get("channel") or "sms").strip()
-    
-    custom_message = request.form.get("customMessage", "").strip()
-    if custom_message:
-    text = custom_message
+@app.route("/static/<path:filename>")
+def static_files(filename):
+    return send_from_directory(str(BASE_DIR / "static"), filename)
 
-    msisdns = _normalize_msisdn_msisdns(raw_numbers)
-    if not place or not date_ or not time_:
-        return jsonify({"ok": False, "error": "Συμπλήρωσε τόπο/ημερομηνία/ώρα."}), 400
-    if channel != "sms":
-        return jsonify({"ok": False, "error": "Μόνο SMS υποστηρίζεται προς το παρόν."}), 400
-    if not msisdns:
-        return jsonify({"ok": False, "error": "Δεν βρέθηκαν παραλήπτες."}), 400
 
-    msg_id = _gen_id()
-    landing_url = f"{PUBLIC_BASE_URL}/r?id={msg_id}"
-    text = f"Flying Dads Team ⚽\nΥπενθύμιση: Παίζουμε μπαλίτσα στο {place} την {date_} ώρα {time_}!\n👉 Δες περισσότερα: {landing_url}"
-    # Αν ο χρήστης έγραψε ελεύθερο μήνυμα, το χρησιμοποιούμε
-    custom_message = request.form.get("customMessage", "").strip()
-    if custom_message:
-        text = custom_message
-
-    ok, provider = yuboto_send_sms(YUBOTO_SENDER, text, msisdns)
-
-    # log
-    logs = _read_json(LOG_FILE, [])
-    logs.append({
-        "id": msg_id,
-        "timestamp": _now_str(),
-        "place": place,
-        "date": date_,
-        "time": time_,
-        "channel": channel,
-        "msisdns": msisdns,
-        "text": text,
-        "landing": landing_url,
-        "provider_response": provider,
-        "seen_by": []
-    })
-    _write_json(LOG_FILE, logs)
-
-    if ok:
-        return jsonify({"ok": True, "id": msg_id, "landing": landing_url})
-    else:
-        return jsonify({"ok": False, "id": msg_id, "landing": landing_url, "error": "Provider error", "provider": provider}), 500
-
-# ---------- Main ----------
+# -------------------------------------------------
+# main
+# -------------------------------------------------
 if __name__ == "__main__":
-    # Allow local debug run if needed
-    app.run(host="0.0.0.0", port=8899)
+    app.run(host="0.0.0.0", port=PORT)

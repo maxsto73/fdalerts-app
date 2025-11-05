@@ -1,81 +1,92 @@
-
 <!doctype html>
 <html lang="el">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>RasPi Notifications — Ultimate</title>
-    <link rel="stylesheet" href="/static/styles.css" />
-    <!-- PWA / iOS -->
-    <link rel="manifest" href="/manifest.json">
-    <meta name="theme-color" content="#2f6fec">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="default">
-    <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
-    <script>
-      async function setupPush() {
-        if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
-        try {
-          const reg = await navigator.serviceWorker.register('/sw.js');
-          const perm = await Notification.requestPermission();
-          if (perm !== 'granted') return;
-          const resp = await fetch('/vapidPublicKey');
-          const data = await resp.json();
-          const vapidKey = data.key;
-          const appKey = urlBase64ToUint8Array(vapidKey);
-          const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: appKey });
-          await fetch('/subscribe', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(sub)});
-          document.getElementById('wp-status').textContent = 'Ο browser είναι εγγεγραμμένος για Web Push.';
-        } catch (e) { console.log('Web Push setup failed', e); }
-      }
-      function urlBase64ToUint8Array(base64String) {
-        const padding = '='.repeat((4 - base64String.length % 4) % 4);
-        const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
-        const rawData = atob(base64);
-        const outputArray = new Uint8Array(rawData.length);
-        for (let i = 0; i < rawData.length; ++i) outputArray[i] = rawData.charCodeAt(i);
-        return outputArray;
-      }
-      function onChannelChange() {
-        const ch = document.querySelector('input[name="channel"]:checked')?.value;
-        document.getElementById('sms-extra').style.display = ch === 'sms' ? 'block' : 'none';
-      }
-      window.addEventListener('load', () => { setupPush(); onChannelChange(); });
-    </script>
-  </head>
-  <body>
-    <div class="container">
-      <h1>Ενιαίες Ειδοποιήσεις Raspberry Pi</h1>
-      <p>Θύρα: {{ port }} • {{ version }}</p>
-      <p id="wp-status"></p>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>FD Alerts — Dashboard</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+  <style>
+    .tabs { display:flex; justify-content:center; margin-bottom:15px; }
+    .tab-btn { background:#333; color:#ccc; padding:8px 16px; border:none; cursor:pointer; }
+    .tab-btn.active { background:#555; color:#fff; }
+    .tab-content { display:none; }
+    .tab-content.active { display:block; }
+    .contacts-list label { display:block; margin:4px 0; }
+  </style>
+  <script>
+    function switchTab(tab) {
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+      document.getElementById(tab + '-tab').classList.add('active');
+      document.getElementById(tab).classList.add('active');
+    }
+    window.onload = () => switchTab('send');
+  </script>
+</head>
+<body>
+  <div class="container">
+    <div class="tabs">
+      <button class="tab-btn active" id="send-tab" onclick="switchTab('send')">Αποστολή</button>
+      <button class="tab-btn" id="contacts-tab" onclick="switchTab('contacts')">Επαφές</button>
+      <button class="tab-btn" id="logs-tab" onclick="switchTab('logs')">Ιστορικό</button>
+    </div>
 
+    <h1>FD Alerts</h1>
+    <p>Θύρα: {{ port }} • {{ version }}</p>
+
+    <!-- Αποστολή -->
+    <div id="send" class="tab-content active">
       <form method="POST">
         <fieldset>
-          <legend>Διάλεξε κανάλι ειδοποίησης</legend>
-          <label><input type="radio" name="channel" value="pushover" onchange="onChannelChange()"> Pushover</label>
-          <label><input type="radio" name="channel" value="telegram" onchange="onChannelChange()"> Telegram</label>
-          <label><input type="radio" name="channel" value="webpush" onchange="onChannelChange()"> Web Push</label>
-          <label><input type="radio" name="channel" value="sms" onchange="onChannelChange()"> SMS</label>
-          <p class="hint">* Θα λειτουργήσουν μόνο όσα έχουν ρυθμιστεί στο <code>.env</code>. Για Web Push χρειάζεται αποδοχή ειδοποιήσεων στον browser.</p>
+          <legend>Κανάλι ειδοποίησης</legend>
+          <label><input type="radio" name="channel" value="sms" checked> SMS (Yuboto OMNI)</label>
+          <p class="hint">Πάροχος: {{ sms_provider or '—' }}</p>
         </fieldset>
 
-        <div id="sms-extra" style="display:none">
-          <label for="to_phone">Παραλήπτης (τηλέφωνο για SMS)</label>
-          <input type="text" id="to_phone" name="to_phone" placeholder="+30XXXXXXXXXX" />
-          <p class="hint">Πάροχος: {{ sms_provider or '—' }}</p>
-        </div>
+        <fieldset>
+          <legend>Επιλογή επαφών</legend>
+          <div class="contacts-list">
+            {% for c in contacts %}
+              <label>
+                <input type="checkbox" name="contacts" value="{{ c.phone }}"> {{ c.name }} ({{ c.phone }})
+              </label>
+            {% endfor %}
+          </div>
+        </fieldset>
 
-        <label for="message">Κείμενο ειδοποίησης</label>
-        <textarea id="message" name="message" rows="5" placeholder="Γράψε το μήνυμα που θες να σταλεί..."></textarea>
+        <label for="message">Μήνυμα</label>
+        <textarea id="message" name="message" rows="4" placeholder="Πληκτρολόγησε το μήνυμα..."></textarea>
 
         <button type="submit">Αποστολή</button>
       </form>
 
-      {% if status is not none %}
-      <div class="status {{ 'ok' if ok else 'error' }}">{{ status }}</div>
+      {% if status %}
+        <div class="status {{ 'ok' if ok else 'error' }}">{{ status }}</div>
       {% endif %}
-
-      <footer><small>Flask • Pushover • Telegram • Web Push • SMS</small></footer>
     </div>
-  </body>
+
+    <!-- Επαφές -->
+    <div id="contacts" class="tab-content">
+      <h2>Επαφές</h2>
+      <p>Οι επαφές αποθηκεύονται στο <code>/data/contacts.json</code>.</p>
+      <pre>{{ contacts|tojson(indent=2) }}</pre>
+    </div>
+
+    <!-- Ιστορικό -->
+    <div id="logs" class="tab-content">
+      <h2>Ιστορικό Αποστολών</h2>
+      {% if logs %}
+        <ul>
+          {% for l in logs[-10:] %}
+            <li><strong>{{ l.channel }}</strong>: {{ l.message[:60] }}... ({{ l.contacts|join(', ') }})</li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p>Δεν υπάρχουν ακόμα αποστολές.</p>
+      {% endif %}
+    </div>
+
+    <footer><small>FD Alerts • Flask • SMS</small></footer>
+  </div>
+</body>
 </html>

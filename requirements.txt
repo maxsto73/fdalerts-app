@@ -1,6 +1,0 @@
-
-Flask==3.0.0
-python-dotenv==1.0.1
-requests==2.32.3
-pywebpush==1.14.0
-py-vapid==1.9.0

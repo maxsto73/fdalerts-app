@@ -1,5 +1,18 @@
 [
   {
+    "id": "18304d",
+    "ts": "2025-11-06T12:10:49",
+    "channel": "sms",
+    "place": "davoyrlis",
+    "date": "2025-11-06",
+    "time": "04:12",
+    "recipients": [
+      "+306945414565"
+    ],
+    "preview": "Flying Dads Team ⚽\nΥπενθύμιση: Παίζουμε davoyrlis στις 2025-11-06 ώρα 04:12!\n Δε",
+    "ok": true
+  },
+  {
     "time": "26/10/2025 12:20",
     "kind": "seen",
     "message": "Το event evt-20251026-122018 επιβεβαιώθηκε ως 'Είδα το μήνυμα'"

@@ -1,0 +1,12 @@
+[
+  {
+    "name": "Μάκης",
+    "phone": "3069XXXXXXXX",
+    "active": true
+  },
+  {
+    "name": "Γιώργος",
+    "phone": "3069YYYYYYYY",
+    "active": false
+  }
+]

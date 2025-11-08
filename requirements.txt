@@ -1,0 +1,18 @@
+# FD Alerts dependencies
+
+# Web framework
+Flask==3.0.3
+
+# HTTP requests (Yuboto API)
+requests==2.32.3
+
+# For JSON safety, date handling, etc.
+itsdangerous==2.2.0
+Jinja2==3.1.4
+Werkzeug==3.0.3
+
+# Optional but useful in case of logging or JSON fallback
+certifi>=2024.2.2
+charset-normalizer>=3.3.2
+idna>=3.7
+urllib3>=2.2.3

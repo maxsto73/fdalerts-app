@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="el">
+  <head>
+    <meta charset="utf-8" />
+    <title>FD Alerts — Είδα το μήνυμα</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      body { background:#0f172a; color:#e2e8f0; font-family:system-ui,sans-serif;
+             display:flex; justify-content:center; align-items:center; min-height:100vh; }
+      .box { background:rgba(15,23,42,.35); border:1px solid rgba(148,163,184,.05);
+             border-radius:1rem; padding:1.5rem 1.8rem; text-align:center; width:min(420px,90vw); }
+      button { background:#22c55e; border:none; color:#fff; padding:.55rem 1.2rem;
+               border-radius:.5rem; font-weight:600; cursor:pointer; }
+      img { height:62px; margin-bottom:.6rem; }
+      .small { font-size:.7rem; opacity:.6; margin-top:.7rem; }
+    </style>
+    <script>
+      async function markSeen() {
+        const id = "{{ rid }}";
+        const name = "{{ name }}";
+        await fetch("/r/seen", {
+          method:"POST",
+          headers:{"Content-Type":"application/json"},
+          body: JSON.stringify({id, name})
+        });
+        document.getElementById('done').style.display = 'block';
+      }
+    </script>
+  </head>
+  <body>
+    <div class="box">
+      <img src="/static/icons/logo_final.png" alt="FD Alerts">
+      <h2>⚽ Ευχαριστούμε, {{ name }}!</h2>
+      <p>Πάτησε παρακάτω για να ενημερωθεί η ομάδα ότι είδες το μήνυμα.</p>
+      <button onclick="markSeen()">Το είδα</button>
+      <div id="done" style="display:none" class="small">Καταγράφηκε ✅</div>
+      <div class="small">id: {{ rid }}</div>
+    </div>
+  </body>
+</html>

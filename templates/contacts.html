@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="el">
+  <head>
+    <meta charset="utf-8" />
+    <title>FD Alerts — Επαφές</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      body { background:#0f172a; color:#e2e8f0; font-family:system-ui, sans-serif; margin:0; }
+      header { display:flex; align-items:center; gap:1rem; padding:.75rem 1.5rem; background:rgba(15,23,42,.6); }
+      a { color:#e2e8f0; text-decoration:none; }
+      main { max-width:900px; margin:1.5rem auto; padding:0 1rem; }
+      .card { background:rgba(15,23,42,.35); border:1px solid rgba(148,163,184,.08); border-radius:1rem; padding:1rem 1.25rem; }
+      table { width:100%; border-collapse:collapse; }
+      th, td { padding:.3rem .2rem; border-bottom:1px solid rgba(148,163,184,.05); }
+      input[type="text"] { background:rgba(15,23,42,.3); border:1px solid rgba(148,163,184,.25); border-radius:.4rem; color:#e2e8f0; padding:.2rem .4rem; }
+      button { background:#2563eb; border:none; color:#fff; padding:.5rem .9rem; border-radius:.5rem; cursor:pointer; }
+      .small-muted { font-size:.7rem; opacity:.6; }
+    </style>
+    <script>
+      let contacts = {{ contacts|tojson }};
+      function addRow() {
+        contacts.push({name:"", phone:""});
+        render();
+      }
+      function removeRow(idx) {
+        contacts.splice(idx,1);
+        render();
+      }
+      function onChange(idx, field, value) {
+        contacts[idx][field] = value;
+      }
+      async function saveContacts() {
+        await fetch("/api/contacts/save", {
+          method:"POST",
+          headers:{"Content-Type":"application/json"},
+          body: JSON.stringify({contacts})
+        });
+        alert("Αποθηκεύτηκαν");
+      }
+      function sendToMain() {
+        // στέλνουμε μόνο τα τσεκαρισμένα
+        const checked = Array.from(document.querySelectorAll('.chk-contact:checked'))
+          .map(ch => ch.dataset.phone);
+        // γράψε το στο localStorage
+        localStorage.setItem("fdalerts_selected", checked.join(","));
+        alert("✅ Επιλέχθηκαν " + checked.length + " τηλέφωνα. Επιστροφή στην αρχική.");
+        window.location.href = "/";
+      }
+      function render() {
+        const tbody = document.getElementById("tbody");
+        tbody.innerHTML = "";
+        contacts.forEach((c,idx) => {
+          const tr = document.createElement("tr");
+
+          const tdChk = document.createElement("td");
+          const chk = document.createElement("input");
+          chk.type = "checkbox";
+          chk.className = "chk-contact";
+          chk.dataset.phone = c.phone || "";
+          tdChk.appendChild(chk);
+          tr.appendChild(tdChk);
+
+          const tdName = document.createElement("td");
+          const inName = document.createElement("input");
+          inName.type = "text";
+          inName.value = c.name || "";
+          inName.oninput = (e)=>onChange(idx,"name",e.target.value);
+          tdName.appendChild(inName);
+          tr.appendChild(tdName);
+
+          const tdPhone = document.createElement("td");
+          const inPhone = document.createElement("input");
+          inPhone.type = "text";
+          inPhone.value = c.phone || "";
+          inPhone.oninput = (e)=>onChange(idx,"phone",e.target.value);
+          tdPhone.appendChild(inPhone);
+          tr.appendChild(tdPhone);
+
+          const tdDel = document.createElement("td");
+          const btn = document.createElement("button");
+          btn.textContent = "✕";
+          btn.onclick = ()=>removeRow(idx);
+          tdDel.appendChild(btn);
+          tr.appendChild(tdDel);
+
+          tbody.appendChild(tr);
+        });
+      }
+      window.addEventListener('DOMContentLoaded', render);
+    </script>
+  </head>
+  <body>
+    <header>
+      <a href="/">← Επιστροφή</a>
+      <h2>Επαφές</h2>
+    </header>
+    <main>
+      <div class="card">
+        <p class="small-muted">Τσέκαρε ποιους θέλεις να στείλεις, πάτα «Πέρασμα στην αρχική» και μετά από εκεί «Αποστολή».</p>
+        <table>
+          <thead>
+            <tr>
+              <th></th>
+              <th>Όνομα</th>
+              <th>Τηλέφωνο</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="tbody"></tbody>
+        </table>
+        <br>
+        <button onclick="addRow()">➕ Προσθήκη</button>
+        <button onclick="saveContacts()"> Αποθήκευση</button>
+        <button onclick="sendToMain()"> Πέρασμα στην αρχική</button>
+      </div>
+    </main>
+  </body>
+</html>

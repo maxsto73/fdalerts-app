@@ -1,0 +1,27 @@
+version: "3.9"
+services:
+  fdalerts:
+    image: python:3.11-slim
+    container_name: fdalerts
+    working_dir: /app
+    ports:
+      - "8899:8899"
+    environment:
+      PORT: 8899
+      SMS_PROVIDER: omni
+      YUBOTO_API_KEY: your_yuboto_api_key_here
+      SMS_SENDER: FDTeam 2012
+      PUBLIC_BASE_URL: "https://alert.fdteam2012.gr"
+    volumes:
+      - /volume1/docker/fdalerts/app:/app
+    command: >
+      sh -c "
+        apt-get update && apt-get install -y git &&
+        if [ ! -d .git ]; then
+          git clone https://github.com/maxsto73/fdalerts-app .;
+        else
+          git config --global --add safe.directory /app && git pull;
+        fi &&
+        pip install --no-cache-dir -r requirements.txt &&
+        python app.py"
+    restart: unless-stopped

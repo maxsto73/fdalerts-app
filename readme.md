@@ -6,50 +6,107 @@
 Flask-based SMS Automation System for FDTeam 2012 ⚽  
 Τρέχει σε Raspberry Pi ή Synology NAS μέσω Docker.
 
-# ⚽ FDAlerts App
+# FD Alerts
 
-Flask εφαρμογή για αποστολή SMS (Yuboto OMNI) με landing link. Τρέχει είτε σε Raspberry / Synology με Docker, είτε μέσα από Portainer.
+Web εφαρμογή (Flask) για αποστολή SMS ειδοποιήσεων (Yuboto OMNI), επιλογή επαφών από λίστα, καταγραφή ποιος είδε το μήνυμα (landing page) και προβολή logs. Σχεδιασμένη για να τρέχει σε Docker (Synology ή Raspberry Pi) και να φορτώνει τα αρχεία της από GitHub repo.
 
 ---
 
-## 1. Εγκατάσταση σε **Raspberry Pi** ή **Synology** μέσω **SSH**
+## ✳️ Τι κάνει
 
-### 1.1 Προαπαιτούμενα
-- Εγκατεστημένο **Docker** και **docker compose**
-- Ένας φάκελος π.χ. `/opt/fdalerts` ή σε Synology: `/volume1/docker/fdalerts`
-- Πρόσβαση SSH
+- Αποστολή SMS σε έναν ή περισσότερους παραλήπτες
+- Προδιαμορφωμένο μήνυμα “παίζουμε μπαλίτσα…” με ημερομηνία, ώρα, γήπεδο
+- Αυτόματο link προς landing page για να πατάει ο παίκτης “Το είδα”
+- Καταγραφή στο backend ποιος το είδε και πότε
+- Σελίδα επαφών (contacts) που αποθηκεύεται σε JSON
+- Δουλεύει με **Yuboto OMNI** (Basic auth)
+- Σχεδιασμένο ώστε αργότερα να μπει και GSM module
 
-### 1.2 Κατέβασε το repo
-```bash
-mkdir -p /opt/fdalerts
-cd /opt/fdalerts
-git clone https://github.com/maxsto73/fdalerts-app.git .
-(αν το έχεις ήδη, κάνεις:)
+---
 
-bash
+## ⚙️ Μεταβλητές περιβάλλοντος
+
+| Όνομα             | Περιγραφή                              | Παράδειγμα                         |
+|-------------------|----------------------------------------|-------------------------------------|
+| `PORT`            | Θύρα που θα ακούει το Flask            | `8899`                              |
+| `SMS_PROVIDER`    | Πάροχος SMS                            | `omni`                              |
+| `YUBOTO_API_KEY`  | API key της Yuboto (Basic)             | `MDBCNDZ...`                        |
+| `SMS_SENDER`      | Όνομα αποστολέα                        | `FDTeam 2012`                       |
+| `PUBLIC_BASE_URL` | URL που θα βάζει στο SMS για landing   | `https://alert.fdteam2012.gr`       |
+
+> Αν δεν βάλεις `PUBLIC_BASE_URL`, θα βάλει τοπικό (`http://127.0.0.1:8899`) και η landing δεν θα ανοίγει απ’ έξω.
+
+---
+
+## 📁 Δομή
+
+Μέσα στο container /app:
+
+```text
+/app
+ ├── app.py
+ ├── templates/
+ │    ├── index.html
+ │    ├── contacts.html
+ │    └── landing.html
+ ├── static/
+ │    └── icons/logo_final.png
+ ├── requirements.txt
+ └── data/
+      ├── contacts.json
+      ├── logs.json
+      └── views.json
+Ο φάκελος data/ πρέπει να παραμένει επίμονος (volume) για να μη χάνονται επαφές και logs.
+
+1️⃣ Εγκατάσταση μέσω Portainer από GitHub (πιο «καθαρή» μέθοδος)
+Αυτό είναι το σενάριο: έχεις Synology ή Pi με Docker + Portainer και δεν θες να ανεβάζεις αρχεία με το χέρι. Το Portainer θα τραβήξει το repo και θα το τρέξει.
+
+Μπες στο Portainer → Stacks → Add stack
+
+Όνομα: fdalerts
+
+Διάλεξε Repository
+
+Βάλε:
+
+Repository URL
+
+text
 Αντιγραφή κώδικα
-cd /opt/fdalerts
-git pull
-1.3 Φτιάξε το .env
-Δημιούργησε αρχείο .env δίπλα στο docker-compose.yml:
+https://github.com/maxsto73/fdalerts-app
+Compose path
+
+text
+Αντιγραφή κώδικα
+docker-compose.yml
+Στο πεδίο environment (ή στο .env του stack) βάλε:
 
 env
 Αντιγραφή κώδικα
-# Πόρτα που θα ακούει το Flask
 PORT=8899
-
-# Yuboto OMNI ρυθμίσεις
 SMS_PROVIDER=omni
-YUBOTO_API_KEY=MDBCNDZFQTktREI1MS00NUMxLUEzRTktOTY3RTQ0NURGNjA1
+YUBOTO_API_KEY=ΒΑΛΕ_ΤΟ_ΔΙΚΟ_ΣΟΥ
 SMS_SENDER=FDTeam 2012
+PUBLIC_BASE_URL=https://alert.fdteam2012.gr
+Πάτα Deploy the stack
 
-# Για τα links που στέλνει με sms
-PUBLIC_BASE_URL=http://192.168.1.241:8899
-# Αν θες και domain όταν το σηκώνεις στο Synology reverse proxy:
-SECOND_PUBLIC_BASE_URL=https://app.fdteam2012.gr
-👉 Η εφαρμογή μπορεί να διαβάζει και τις δύο (PUBLIC_BASE_URL και SECOND_PUBLIC_BASE_URL) και να διαλέγεις ποια θα χρησιμοποιείς αργότερα μέσα από το app.
+Άνοιξε στο browser:
 
-1.4 Δημιούργησε docker-compose.yml
+text
+Αντιγραφή κώδικα
+http://IP_ΤΟΥ_SERVER:8899
+Αν το repo ενημερωθεί, κάνεις Re-deploy το stack από το Portainer και θα ξανατραβήξει τον κώδικα.
+
+2️⃣ Εγκατάσταση σε Synology Docker με Portainer αλλά με τοπικό φάκελο
+Αυτό είναι το σενάριο που έχεις ήδη φάκελο στο NAS π.χ. /volume1/docker/fdalerts/app και θέλεις το container να τρέχει τον κώδικα από εκεί, αλλά στην εκκίνηση να κάνει και git pull αν υπάρχει repo.
+
+Δημιούργησε φακέλους στο Synology:
+
+bash
+Αντιγραφή κώδικα
+mkdir -p /volume1/docker/fdalerts/app
+Μέσα στο Portainer → Stacks → Add stack και επικόλλησε αυτό:
+
 yaml
 Αντιγραφή κώδικα
 version: "3.9"
@@ -59,124 +116,119 @@ services:
     image: python:3.11-slim
     container_name: fdalerts
     working_dir: /app
-    env_file:
-      - .env
     ports:
-      - "${PORT:-8899}:8899"
+      - "8899:8899"
+    environment:
+      PORT: 8899
+      SMS_PROVIDER: omni
+      YUBOTO_API_KEY: ΒΑΛΕ_ΤΟ_ΔΙΚΟ_ΣΟΥ
+      SMS_SENDER: FDTeam 2012
+      PUBLIC_BASE_URL: "https://alert.fdteam2012.gr"
     volumes:
-      # ο κώδικας από το repo
-      - ./app:/app
-      # logs / data κλπ
-      - ./data:/app/data
+      # εδώ ο κώδικας από το NAS
+      - /volume1/docker/fdalerts/app:/app
     command: >
-      bash -c "
-        apt update &&
-        apt install -y git &&
-        git clone https://github.com/maxsto73/fdalerts-app.git . || true &&
+      sh -c "
+        apt-get update && apt-get install -y git &&
+        git config --global --add safe.directory /app &&
+        if [ ! -d .git ]; then
+          git clone https://github.com/maxsto73/fdalerts-app .;
+        else
+          git pull;
+        fi &&
         pip install --no-cache-dir -r requirements.txt &&
-        python3 app.py
+        python app.py
       "
     restart: unless-stopped
-Τι κάνει αυτό:
+Deploy
 
-ανοίγει την πόρτα 8899 προς τα έξω
+Αυτό που κάνει το command:
 
-κατεβάζει το repo μέσα στο container
+εγκαθιστά git
 
-εγκαθιστά Flask + requests
+δηλώνει ότι το /app είναι “safe”
 
-τρέχει το app.py
+αν δεν υπάρχει repo → κάνει git clone
 
-1.5 Εκκίνηση
+αν υπάρχει → κάνει git pull
+
+εγκαθιστά dependencies
+
+τρέχει Flask
+
+Μετά το deploy:
+
+text
+Αντιγραφή κώδικα
+http://IP_ΤΟΥ_NAS:8899
+3️⃣ Εγκατάσταση με docker CLI (π.χ. σε Raspberry Pi χωρίς Portainer)
+Αν είσαι κατευθείαν σε SSH:
+
+bash
+Αντιγραφή κώδικα
+mkdir -p ~/fdalerts
+cd ~/fdalerts
+curl -O https://raw.githubusercontent.com/maxsto73/fdalerts-app/main/docker-compose.yml
+Μετά άνοιξε το docker-compose.yml και βάλε τα δικά σου env (API key, base url κλπ).
+
+Και τρέξε:
+
 bash
 Αντιγραφή κώδικα
 docker compose up -d
-Δες ότι τρέχει:
+ή αν έχεις το παλιό:
 
 bash
 Αντιγραφή κώδικα
-docker ps
-docker logs -f fdalerts
-Άνοιξε:
+docker-compose up -d
+Και μετά:
 
-http://IP_TOU_PI:8899
-ή (αν έχεις βάλει reverse proxy)
-
-https://app.fdteam2012.gr
-
-2. Εγκατάσταση μέσω Portainer
-Αυτό είναι για Synology ή οπουδήποτε έχεις Portainer.
-
-2.1 Ετοίμασε έναν φάκελο στο NAS
-Π.χ.
-
-/volume1/docker/fdalerts/app
-
-/volume1/docker/fdalerts/data
-
-(σημαντικό: να υπάρχουν, γιατί το compose θα τα κάνει bind)
-
-2.2 Φτιάξε ένα .env στο NAS
-Φτιάξε αρχείο /volume1/docker/fdalerts/.env με:
-
-env
+text
 Αντιγραφή κώδικα
-PORT=8899
-SMS_PROVIDER=omni
-YUBOTO_API_KEY=MDBCNDZFQTktREI1MS00NUMxLUEzRTktOTY3RTQ0NURGNjA1
-SMS_SENDER=FDTeam 2012
-PUBLIC_BASE_URL=http://192.168.1.241:8899
-SECOND_PUBLIC_BASE_URL=https://app.fdteam2012.gr
-2.3 Άνοιξε Portainer → Stacks → Add Stack
-Δώσε όνομα π.χ. fdalerts και βάλε αυτό το YAML:
+http://IP_ΤΟΥ_PI:8899
+🔁 Ενημέρωση / redeploy
+Αν τρέχει από repo (όπως τα παραπάνω):
 
-yaml
-Αντιγραφή κώδικα
-version: "3.9"
+Μπαίνεις στο Portainer
 
-services:
-  fdalerts:
-    image: python:3.11-slim
-    container_name: fdalerts
-    working_dir: /app
-    env_file:
-      - /data/compose/{{.Stack.ID}}/.env
-    ports:
-      - "8899:8899"
-    volumes:
-      # προσαρμόζεις τα paths σου στο Synology
-      - /volume1/docker/fdalerts/app:/app
-      - /volume1/docker/fdalerts/data:/app/data
-    command: >
-      bash -c "
-        apt update &&
-        apt install -y git &&
-        cd /app &&
-        git clone https://github.com/maxsto73/fdalerts-app.git . || true &&
-        pip install --no-cache-dir -r requirements.txt &&
-        python3 app.py
-      "
-    restart: unless-stopped
-🔴 Αν το Portainer σου παραπονιέται ότι δεν βρίσκει το .env στο /data/compose/..., τότε απλά βάλε το πλήρες path του NAS σου:
+Ανοίγεις το stack
 
-yaml
-Αντιγραφή κώδικα
-env_file:
-  - /volume1/docker/fdalerts/.env
-2.4 Deploy
-Πατάς Deploy the stack.
-Μετά δες τα logs από το container fdalerts για να σιγουρευτείς ότι κατέβηκε το repo και ξεκίνησε ο Flask.
+Πατάς Update ή Re-deploy
 
-🟣 Σημειώσεις
-Αν δεν βλέπεις favicon, βεβαιώσου ότι ο φάκελος static/ υπάρχει μέσα στο bind mount (/volume1/docker/fdalerts/app/static).
+Το container στην εκκίνηση ξανατρέχει το git pull (όπως το γράψαμε στο command), άρα παίρνει τον τελευταίο κώδικα.
 
-Αν το landing link ανοίγει σε 127.0.0.1, τότε στο .env βάλε την κανονική public διεύθυνση και κάνε docker compose restart.
+Αν τρέχεις από τοπικό φάκελο:
 
-Αν θες να αλλάξεις πόρτα, άλλαξε το PORT= στο .env και το mapping στο compose.
+αλλάζεις το αρχείο στο NAS (/volume1/docker/fdalerts/app/app.py)
 
+και κάνεις Restart container από Portainer
 
+🧪 Έλεγχος ότι όλα είναι ΟΚ
+http://IP:8899 ανοίγει το web interface
 
+στέλνεις SMS → πρέπει να γράψει log στο /app/data/logs.json
 
+ανοίγεις το link από το SMS → πρέπει να χτυπήσει /r?id=... και να γραφτεί στο /app/data/views.json
 
+στο UI πρέπει να βλέπεις ποιος πάτησε “Το είδα”
 
+🛠 Συχνά θέματα
+1. Landing ανοίγει σε 127.0.0.1
+Βάλε σωστό PUBLIC_BASE_URL στο compose.
 
+2. Δεν βρίσκει favicon
+Βεβαιώσου ότι υπάρχει στο container:
+/app/static/icons/logo_final.png
+και στο template το path είναι /static/icons/logo_final.png
+
+3. “destination path '.' already exists” στα logs
+Σημαίνει ότι το container έκανε ήδη clone. Το έχουμε καλύψει με git pull στο command.
+
+📦 Μελλοντικά
+Προσθήκη επιλογής “GSM / Local SIM” με SIM800C
+
+Export / import επαφών
+
+Authentication στο web UI
+
+Καλή μπάλα ⚽
